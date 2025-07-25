@@ -5,6 +5,7 @@
 #include "exception.hpp"
 #include "deep_ep.hpp"
 #include "pytorch_npu_helper.hpp"
+#include "common.hpp"
 
 
 namespace deep_ep {
@@ -31,6 +32,8 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
     } else {
         EP_HOST_ASSERT(moe_all_to_all_group_name.size() < 128);
     }
+    this->shared_expert_num = get_value_from_env("MOE_SHARED_EXPERT_NUM", 1);
+    this->shared_expert_rank_num = get_value_from_env("MOE_SHARED_EXPERT_RANK_NUM", 0);
 }
 
 Buffer::~Buffer() noexcept(false) {
@@ -79,10 +82,10 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t expert_shard_type = 0;
-    int64_t shared_expert_num = 1;
+    int64_t shared_expert_num = this->shared_expert_num;
+    int64_t shared_expert_rank_num = this->shared_expert_rank_num;
     int64_t expert_token_nums_type = 1;
     int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
-    int64_t shared_expert_rank_num = 0;
 
     // get ep & tp name
     char hcom_ep_name[128];
@@ -167,9 +170,9 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     int64_t tp_world_size = 1;
     int64_t tp_rankId = 0;
     int64_t expert_shared_type = 0;
-    int64_t shared_expert_num = 1;
+    int64_t shared_expert_num = this->shared_expert_num;
+    int64_t shared_expert_rank_num = this->shared_expert_rank_num;
     int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
-    int64_t shared_expert_rank_num = 0;
     int64_t out_dtype = 0;
     int64_t comm_quant_mode = 0;
     int64_t group_list_type = 0;
