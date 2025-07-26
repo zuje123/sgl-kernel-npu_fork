@@ -32,7 +32,7 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
     } else {
         EP_HOST_ASSERT(moe_all_to_all_group_name.size() < 128);
     }
-    this->shared_expert_num = get_value_from_env("MOE_SHARED_EXPERT_NUM", 1);
+
     this->shared_expert_rank_num = get_value_from_env("MOE_SHARED_EXPERT_RANK_NUM", 0);
 }
 
@@ -62,7 +62,7 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
 
     auto num_tokens = static_cast<int>(new_x.size(0)), hidden = static_cast<int>(new_x.size(1));
     auto num_scales = hidden / 128, num_topk = static_cast<int>(new_topk_idx.size(1));
-    auto num_local_experts = num_experts / num_ranks;
+    auto num_local_experts = num_experts / (num_ranks - shared_expert_rank_num);
 
     // Allocate packed tensors
     auto device = new_x.device();
