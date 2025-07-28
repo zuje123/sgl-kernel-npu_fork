@@ -59,17 +59,24 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
         new_x = torch::ones({1, 7168}, x.options());
         this->new_topk_idx = torch::arange(0, 8, topk_idx.options()).reshape({1, 8});
     }
+    int64_t shared_expert_rank_num = this->shared_expert_rank_num;
 
     auto num_tokens = static_cast<int>(new_x.size(0)), hidden = static_cast<int>(new_x.size(1));
     auto num_scales = hidden / 128, num_topk = static_cast<int>(new_topk_idx.size(1));
     auto num_local_experts = num_experts / (num_ranks - shared_expert_rank_num);
+    auto A = 0;
+    if (rank < shared_expert_rank_num) {
+        A = num_max_dispatch_tokens_per_rank * num_ranks / shared_expert_rank_num;
+        num_local_experts = 1;
+    } else { // moe expert
+        A = num_max_dispatch_tokens_per_rank * num_ranks * num_local_experts;
+    }
+    printf("current rank=%d, A=%d, num_local_experts=%d\n", rank, A, num_local_experts);
 
     // Allocate packed tensors
     auto device = new_x.device();
-    auto packed_recv_x = at::empty({num_local_experts * num_ranks * num_max_dispatch_tokens_per_rank, hidden},
-        new_x.options().dtype(use_fp8 ? at::kChar : at::kBFloat16));
-    auto packed_recv_x_scales = at::empty(
-        {num_local_experts * num_ranks * num_max_dispatch_tokens_per_rank}, at::dtype(at::kFloat).device(device));
+    auto packed_recv_x = at::empty({A, hidden}, new_x.options().dtype(use_fp8 ? at::kChar : at::kBFloat16));
+    auto packed_recv_x_scales = at::empty({A}, at::dtype(at::kFloat).device(device));
     auto expandIdx = at::empty({num_tokens * num_topk}, at::dtype(at::kInt).device(device));
     auto ep_recv_count = at::empty({num_local_experts * num_ranks}, at::dtype(at::kInt).device(device));
     auto tp_recv_count = at::empty({1}, at::dtype(at::kInt).device(device));
@@ -83,7 +90,6 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     int64_t tp_rank = 0;
     int64_t expert_shard_type = 0;
     int64_t shared_expert_num = this->shared_expert_num;
-    int64_t shared_expert_rank_num = this->shared_expert_rank_num;
     int64_t expert_token_nums_type = 1;
     int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
 
