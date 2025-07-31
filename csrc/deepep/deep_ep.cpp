@@ -40,6 +40,61 @@ bool Buffer::is_available() const {
     return available;
 }
 
+std::tuple<torch::Tensor, std::optional<torch::Tensor>, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
+Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
+                            std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream) {
+    EP_HOST_ASSERT(topk_idx.dim() == 2);
+    EP_HOST_ASSERT(topk_idx.is_contiguous());
+    EP_HOST_ASSERT(num_experts > 0);
+
+    const int num_tokens = topk_idx.size(0);
+    const int num_topk = topk_idx.size(1);
+
+    auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
+    auto num_tokens_per_expert_cpu = torch::zeros({num_experts}, options_cpu);
+    auto num_tokens_per_rank_cpu = torch::zeros({num_ranks}, options_cpu);
+    auto is_token_in_rank_cpu = torch::zeros({num_tokens, num_ranks}, torch::kBool);
+    std::optional<torch::Tensor> num_tokens_per_rdma_rank = std::nullopt;
+    std::optional<EventHandle> output_event = std::nullopt;
+
+    auto topk_cpu = topk_idx.to(torch::kCPU);
+    auto topk_acc = topk_cpu.accessor<int64_t, 2>();
+    auto expert_acc = num_tokens_per_expert_cpu.accessor<int32_t, 1>();
+    auto rank_acc = num_tokens_per_rank_cpu.accessor<int32_t, 1>();
+    auto in_rank_acc = is_token_in_rank_cpu.accessor<bool, 2>();
+
+    std::vector<std::vector<bool>> token_rank_seen(num_tokens, std::vector<bool>(num_ranks, false));
+    for (int i = 0; i < num_tokens; ++i) {
+        for (int j = 0; j < num_topk; ++j) {
+            const int64_t expert_idx = topk_acc[i][j];
+
+            if (expert_idx >= 0) {
+                expert_acc[expert_idx]++;
+                
+                const int rank_id = expert_idx / (num_experts / num_ranks);
+                // For each token, it should be counted only once for the rank it is involved in.
+                if (!token_rank_seen[i][rank_id]) {
+                    rank_acc[rank_id]++;
+                    in_rank_acc[i][rank_id] = true;
+                    token_rank_seen[i][rank_id] = true;
+                }
+            }
+        }
+    }
+
+    auto num_tokens_per_expert = num_tokens_per_expert_cpu.to(topk_idx.device());
+    auto num_tokens_per_rank = num_tokens_per_rank_cpu.to(topk_idx.device());
+    auto is_token_in_rank = is_token_in_rank_cpu.to(topk_idx.device());
+
+    return std::make_tuple(
+        num_tokens_per_rank,
+        num_tokens_per_rdma_rank,
+        num_tokens_per_expert,
+        is_token_in_rank,
+        output_event
+    );
+}
+
 std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>,
     std::optional<std::function<void()>>>
     Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
