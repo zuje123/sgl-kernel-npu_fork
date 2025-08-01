@@ -71,7 +71,6 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     } else { // moe expert
         A = num_max_dispatch_tokens_per_rank * num_ranks * num_local_experts;
     }
-    printf("current rank=%d, A=%d, num_local_experts=%d\n", rank, A, num_local_experts);
 
     // Allocate packed tensors
     auto device = new_x.device();
