@@ -291,6 +291,66 @@ void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int 
     return;
 }
 
+std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
+Buffer::intranode_combine(const torch::Tensor& x, const torch::Tensor& topk_idx, const std::optional<torch::Tensor>& topk_weights,
+                          const torch::Tensor& src_idx, const torch::Tensor& send_head) {
+    
+    EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
+    at::Tensor expand_x = x;
+    at::Tensor expand_ids = topk_idx;
+    at::Tensor expand_idx = src_idx;
+    at::Tensor ep_send_counts = send_head;
+    auto device = x.device();
+
+    const int num_tokens = topk_idx.size(0);
+    const int num_topk = topk_idx.size(1);
+    at::Tensor expert_scales;
+    if (topk_weights.has_value()) {
+        expert_scales = topk_weights.value();
+    } else {
+        expert_scales = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
+    }
+
+    int64_t hidden = static_cast<int>(expand_x.size(1));
+    at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
+    int64_t tp_world_size = 1;
+    int64_t tp_rankId = 0;
+    int64_t moe_expert_number = send_head.size(0);
+    int64_t global_bs = topk_idx.size(0) * num_ranks;
+
+    // get ep & tp name
+    char hcom_ep_name[128];
+    if (!moe_all_to_all_group_name.empty()) {
+        std:memcpy(hcom_ep_name, moe_all_to_all_group_name.data(), moe_all_to_all_group_name.size() + 1);
+    } else {
+        HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
+    }
+
+    // Combine data
+    auto combined_x = torch::empty({expert_scales.size(0), hidden}, x.options());
+    std::optional<torch::Tensor> recv_topk_weights;
+    std::optional<EventHandle> event;
+
+    EXEC_NPU_CMD(aclnnMoeDistributeCombineNormal,
+        expand_x,
+        expand_ids,
+        expand_idx,
+        ep_send_counts,
+        expert_scales,
+        tp_send_counts,
+        hcom_ep_name,
+        num_ranks,
+        rank,
+        hcom_ep_name,
+        tp_world_size,
+        tp_rankId,
+        moe_expert_number,
+        global_bs,
+        combined_x);    
+
+    return {combined_x, recv_topk_weights, event};
+}
+
 std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>,
     std::optional<std::function<void()>>>
     Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
