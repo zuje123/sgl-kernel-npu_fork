@@ -5,8 +5,6 @@
 #include "exception.hpp"
 #include "deep_ep.hpp"
 #include "pytorch_npu_helper.hpp"
-#include "aclnn_notify_dispatch.h"
-#include "aclnn_moe_dispatch.h"
 
 
 namespace deep_ep {
