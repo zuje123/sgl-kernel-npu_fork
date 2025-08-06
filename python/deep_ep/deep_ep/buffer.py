@@ -10,6 +10,8 @@ from .utils import EventOverlap
 
 class Buffer:
 
+    num_sms: int = 20
+
     def __init__(self, group: dist.ProcessGroup,
                  num_nvl_bytes: int = 0, num_rdma_bytes: int = 0,
                  low_latency_mode: bool = False, num_qps_per_rank: int = 12,
@@ -47,6 +49,28 @@ class Buffer:
             self.rank, self.group_size, num_nvl_bytes, num_rdma_bytes, low_latency_mode, moe_all_to_all_group_name)
 
     @staticmethod
+    def set_num_sms(new_num_sms: int) -> None:
+        """
+        Set the number of SMs to use in high-throughput kernels.
+
+        Arguments:
+            new_num_sms: the new number to be set.
+        """
+
+        assert new_num_sms % 2 == 0, 'The SM count must be even'
+        Buffer.num_sms = new_num_sms
+
+    @staticmethod
+    def capture() -> EventOverlap:
+        """
+        Capture a CUDA event on the current stream, i.e. `torch.cuda.current_stream()`.
+
+        Returns:
+            event: the captured event.
+        """
+        return EventOverlap(EventHandle())
+
+    @staticmethod
     def get_low_latency_rdma_size_hint(num_max_dispatch_tokens_per_rank: int, hidden: int, num_ranks: int, num_experts: int) -> int:
         return deep_ep_cpp.get_low_latency_rdma_size_hint(num_max_dispatch_tokens_per_rank, hidden, num_ranks, num_experts)
 
@@ -78,6 +102,20 @@ class Buffer:
             self.runtime.get_dispatch_layout(topk_idx, num_experts, getattr(previous_event, 'event', None),
                                              async_finish, allocate_on_comm_stream)
         return num_tokens_per_rank, num_tokens_per_rdma_rank, num_tokens_per_expert, is_token_in_rank, EventOverlap(event)
+
+    def clean_low_latency_buffer(self, num_max_dispatch_tokens_per_rank: int, hidden: int, num_experts: int) -> None:
+        """
+        As low-latency kernels require part of the buffer to be zero-initialized, so it is vital to clean the buffer
+            if the buffer is dirty at some time.
+        For example, after running the normal dispatch/combine, you must run this function before executing any
+            low-latency kernel.
+
+        Arguments:
+            num_max_dispatch_tokens_per_rank: the maximum number of tokens to dispatch, all the ranks must hold the same value.
+            hidden: the hidden dimension of each token.
+            num_experts: the number of all experts.
+        """
+        self.runtime.clean_low_latency_buffer(num_max_dispatch_tokens_per_rank, hidden, num_experts)
 
     # noinspection PyTypeChecker
     def dispatch(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],

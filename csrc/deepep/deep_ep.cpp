@@ -287,6 +287,10 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     return {recv_x, recv_x_scales, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, send_head, event};
 }
 
+void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int hidden, int num_experts) {
+    return;
+}
+
 std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>,
     std::optional<std::function<void()>>>
     Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
