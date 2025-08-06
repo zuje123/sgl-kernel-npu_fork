@@ -51,6 +51,10 @@ public:
 
     void clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int hidden, int num_experts);
 
+    std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
+    intranode_combine(const torch::Tensor& x, const torch::Tensor& topk_idx, const std::optional<torch::Tensor>& topk_weights,
+                      const torch::Tensor& src_idx, const torch::Tensor& send_head);
+
     std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>,
                std::optional<std::function<void()>>>
     low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
@@ -60,11 +64,11 @@ public:
 
     int get_rdma_rank() const;
 
-    std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<void()>>> low_latency_combine(
-        const at::Tensor &x, const at::Tensor &topk_idx, const at::Tensor &topk_weights, const at::Tensor &src_info,
-        const at::Tensor &layout_range, int64_t num_max_dispatch_tokens_per_rank, int64_t num_experts,
-        const at::Tensor &ep_send_count, bool zero_copy, bool async, bool return_recv_hook,
-        const std::optional<at::Tensor> &out);
+    std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<void()>>> 
+    low_latency_combine(const at::Tensor &x, const at::Tensor &topk_idx, const at::Tensor &topk_weights, const at::Tensor &src_info,
+                        const at::Tensor &layout_range, int64_t num_max_dispatch_tokens_per_rank, int64_t num_experts,
+                        const at::Tensor &ep_send_count, bool zero_copy, bool async, bool return_recv_hook,
+                        const std::optional<at::Tensor> &out);
 };
 
 }  // namespace deep_ep
