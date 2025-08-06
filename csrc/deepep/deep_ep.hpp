@@ -49,11 +49,11 @@ public:
     get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts, std::optional<EventHandle>& previous_event,
                         bool async, bool allocate_on_comm_stream);
     
-    std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<torch::Tensor>, std::optional<torch::Tensor>, std::vector<int>, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
-    intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Tensor>& x_scales,
-                       const std::optional<torch::Tensor>& topk_idx, const std::optional<torch::Tensor>& topk_weights,
-                       const std::optional<torch::Tensor>& num_tokens_per_rank, const torch::Tensor& is_token_in_rank, const std::optional<torch::Tensor>& num_tokens_per_expert,
-                       int cached_num_recv_tokens, const std::optional<torch::Tensor>& cached_rank_prefix_matrix, const std::optional<torch::Tensor>& cached_channel_prefix_matrix,
+    std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>, std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
+    intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
+                       const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
+                       const std::optional<at::Tensor>& num_tokens_per_rank, const at::Tensor& is_token_in_rank, const std::optional<at::Tensor>& num_tokens_per_expert,
+                       int cached_num_recv_tokens, const std::optional<at::Tensor>& cached_rank_prefix_matrix, const std::optional<at::Tensor>& cached_channel_prefix_matrix,
                        int expert_alignment, int num_worst_tokens, const Config& config,
                        std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream);
 

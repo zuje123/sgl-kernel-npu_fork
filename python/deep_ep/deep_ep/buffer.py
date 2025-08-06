@@ -129,6 +129,45 @@ class Buffer:
                  allocate_on_comm_stream: bool = False) -> \
             Tuple[Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], Optional[torch.Tensor],
                   Optional[torch.Tensor], List[int], Tuple, EventOverlap]:
+        """
+        Dispatch tokens to different ranks, both intranode and internode settings are supported.
+        Intranode kernels require all the ranks should be visible via NVLink.
+        Internode kernels require the ranks in a node should be visible via NVLink, while the ranks with the same GPU
+            index should be visible via RDMA.
+
+        Arguments:
+            x: `torch.Tensor` or tuple of `torch.Tensor`, for the first type, the shape must be `[num_tokens, hidden]`,
+                and type must be `torch.bfloat16`; for the second type, the first element of the tuple must be shaped as
+                `[num_tokens, hidden]` with type `torch.float8_e4m3fn`, the second must be `[num_tokens, hidden // 128]`
+                 (requiring divisible) with type `torch.float`.
+            handle: an optional communication handle, if set, the CPU will reuse the layout information to save some time.
+            num_tokens_per_rank: `[num_ranks]` with `torch.int`, the number of tokens to be sent to each rank.
+            num_tokens_per_rdma_rank: `[num_rdma_ranks]` with `torch.int`, the number of tokens to be sent to each RDMA
+                rank (with the same GPU index), return `None` for intranode settings.
+            is_token_in_rank: `[num_tokens, num_ranks]` with `torch.bool`, whether a token be sent to a rank.
+            num_tokens_per_expert: `[num_experts]` with `torch.int`, the number of tokens to be sent to each expert.
+            topk_idx: `[num_tokens, num_topk]` with `torch.int64`, the expert indices selected by each token,
+                `-1` means no selections.
+            topk_weights: `[num_tokens, num_topk]` with `torch.float`, the expert weights of each token to dispatch.
+            expert_alignment: align the number of tokens received by each local expert to this variable.
+            num_worst_tokens: the worst number of tokens to receive, if specified, there will be no CPU sync, and it
+                will be CUDA-graph compatible. Please also notice that this flag is for intranode only.
+            config: the performance tuning config.
+            previous_event: the event to wait before actually executing the kernel.
+            async_finish: the current stream will not wait for the communication kernels to be finished if set.
+            allocate_on_comm_stream: control whether all the allocated tensors' ownership to be on the communication stream.
+
+        Returns:
+            recv_x: received tokens, the same type and tuple as the input `x`, but the number of tokens equals to the
+                received token count.
+            recv_topk_idx: received expert indices.
+            recv_topk_weights: received expert weights.
+            num_recv_tokens_per_expert_list: Python list shaped `[num_local_experts]`, the received token count by
+                each local expert, aligned to the input `expert_alignment`. If `num_worst_tokens` is specified, the list
+                will be empty.
+            handle: the returned communication handle.
+            event: the event after executing the kernel (valid only if `async_finish` is set).
+        """
         # Default config
         config = self.get_dispatch_config(self.group_size) if config is None else config
 

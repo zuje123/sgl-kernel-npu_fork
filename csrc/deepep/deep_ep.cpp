@@ -6,7 +6,7 @@
 #include "deep_ep.hpp"
 #include "pytorch_npu_helper.hpp"
 #include "aclnn_notify_dispatch.h"
-#include "aclnn_moe_dispatch"
+#include "aclnn_moe_dispatch.h"
 
 
 namespace deep_ep {
@@ -117,11 +117,11 @@ Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
     );
 }
 
-std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<torch::Tensor>, std::optional<torch::Tensor>, std::vector<int>, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
-Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Tensor>& x_scales,
-                           const std::optional<torch::Tensor>& topk_idx, const std::optional<torch::Tensor>& topk_weights,
-                           const std::optional<torch::Tensor>& num_tokens_per_rank, const torch::Tensor& is_token_in_rank, const std::optional<torch::Tensor>& num_tokens_per_expert,
-                           int cached_num_recv_tokens, const std::optional<torch::Tensor>& cached_rank_prefix_matrix, const std::optional<torch::Tensor>& cached_channel_prefix_matrix,
+std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>, std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
+Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
+                           const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
+                           const std::optional<at::Tensor>& num_tokens_per_rank, const at::Tensor& is_token_in_rank, const std::optional<at::Tensor>& num_tokens_per_expert,
+                           int cached_num_recv_tokens, const std::optional<at::Tensor>& cached_rank_prefix_matrix, const std::optional<at::Tensor>& cached_channel_prefix_matrix,
                            int expert_alignment, int num_worst_tokens, const Config& config,
                            std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream) {
     // One channel use two blocks, even-numbered blocks for sending, odd-numbered blocks for receiving.
@@ -132,13 +132,13 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
 
     // Type checks
-    EP_HOST_ASSERT(is_token_in_rank.scalar_type() == torch::kBool);
-    EP_HOST_ASSERT(num_tokens_per_expert->scalar_type() == torch::kInt32);
-    EP_HOST_ASSERT(num_tokens_per_rank->scalar_type() == torch::kInt32);
+    EP_HOST_ASSERT(is_token_in_rank.scalar_type() == at::kBool);
+    EP_HOST_ASSERT(num_tokens_per_expert->scalar_type() == at::kInt);
+    EP_HOST_ASSERT(num_tokens_per_rank->scalar_type() == at::kInt);
 
     // Shape and contiguous checks
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
-    EP_HOST_ASSERT((x.size(1) * x.element_size()) % sizeof(int4) == 0);
+    // EP_HOST_ASSERT((x.size(1) * x.element_size()) % sizeof(int4) == 0);
     EP_HOST_ASSERT(is_token_in_rank.dim() == 2 and is_token_in_rank.is_contiguous());
     EP_HOST_ASSERT(is_token_in_rank.size(0) == x.size(0) and is_token_in_rank.size(1) == num_ranks);
     EP_HOST_ASSERT(num_tokens_per_expert->dim() == 1 and num_tokens_per_expert->is_contiguous());
@@ -147,13 +147,13 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     EP_HOST_ASSERT(num_tokens_per_rank->size(0) == num_ranks);
 
     auto num_tokens = static_cast<int>(x.size(0)), hidden = static_cast<int>(x.size(1));
-    auto num_experts = static_cast<int>(num_tokens_per_expert->size(0)), num_local_experts = num_experts / num_ranks;
+    auto num_experts = static_cast<int>(num_tokens_per_expert->size(0)), num_local_experts = static_cast<int>(num_experts / num_ranks);
 
     // Top-k checks
     int num_topk = 0;
     int64_t* topk_idx_ptr = nullptr;
     float* topk_weights_ptr = nullptr;
-    EP_HOST_ASSERT(topk_idx.has_value() == topk_weights.has_value());
+    EP_HOST_ASSERT(topk_idx.has_value());
     if (topk_idx.has_value()) {
         num_topk = static_cast<int>(topk_idx->size(1));
         EP_HOST_ASSERT(num_experts > 0);
@@ -161,7 +161,7 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
         EP_HOST_ASSERT(topk_weights->dim() == 2 and topk_weights->is_contiguous());
         EP_HOST_ASSERT(num_tokens == topk_idx->size(0) and num_tokens == topk_weights->size(0));
         EP_HOST_ASSERT(num_topk == topk_weights->size(1));
-        EP_HOST_ASSERT(topk_weights->scalar_type() == torch::kFloat32);
+        EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
         topk_idx_ptr = topk_idx->data_ptr<int64_t>();
         topk_weights_ptr = topk_weights->data_ptr<float>();
     }
@@ -171,7 +171,7 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     int num_scales = 0, scale_token_stride = 0, scale_hidden_stride = 0;
     if (x_scales.has_value()) {
         EP_HOST_ASSERT(x.element_size() == 1);
-        EP_HOST_ASSERT(x_scales->scalar_type() == torch::kFloat32 or x_scales->scalar_type() == torch::kInt);
+        EP_HOST_ASSERT(x_scales->scalar_type() == at::kFloat or x_scales->scalar_type() == at::kInt);
         EP_HOST_ASSERT(x_scales->dim() == 2);
         EP_HOST_ASSERT(x_scales->size(0) == num_tokens);
         num_scales = x_scales->dim() == 1 ? 1 : static_cast<int>(x_scales->size(1));
@@ -181,18 +181,21 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     }
 
     auto device = x.device();
-    torch::Tensor send_data = torch::zero({num_tokens_per_rank.size(0) * 2}, dtype(torch::kInt32).device(device));
+    at::Tensor send_data = at::zeros({num_tokens_per_rank->size(0) * 2}, at::dtype(at::kInt).device(device));
     auto num_tokens_per_expert_ptr = num_tokens_per_expert->data_ptr<int>();
     auto send_data_ptr = send_data.data_ptr<int>();
     int32_t prefix_sum = 0;
-    for (int i = 0; i < num_tokens_per_expert.size(0); ++i) {
+    at::Tensor send_data_offset = at::zeros({num_tokens_per_rank->size(0)}, at::dtype(at::kInt).device(device));
+    auto send_data_offset_ptr = send_data_offset.data_ptr<int>();
+    for (int i = 0; i < num_tokens_per_expert->size(0); ++i) {
         prefix_sum += num_tokens_per_expert_ptr[i];
         send_data_ptr[i * 2] = num_tokens_per_expert_ptr[i];
         send_data_ptr[i * 2 + 1] = prefix_sum;
+        send_data_offset_ptr[i] = prefix_sum;
     }
     int64_t send_count = 2 * num_local_experts * num_ranks;
 
-    torch::Tensor recv_data = torch::zero({num_tokens_per_rank.size(0) * 2}, dtype(torch::kInt32).device(device));
+    at::Tensor recv_data = at::zeros({num_tokens_per_rank->size(0) * 2}, at::dtype(at::kInt).device(device));
 
     // get ep name
     char hcom_ep_name[128];
@@ -215,16 +218,12 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
         local_rank_id,
         recv_data);
 
-    const int num_tokens = topk_idx.size(0);
-    const int num_topk = topk_idx.size(1);
-    auto topk_ptr = topk_idx.data_ptr<int64_t>();
     std::vector<int32_t> local_expert_acc(num_experts, 0);
-
-    auto send_token_idx = torch::zeros({num_tokens, num_topk}, torch::dtype(torch::kInt32).device(device));
-    auto send_token_idx_ptr = send_token_idx.data_ptr<int32_t>();
+    auto send_token_idx = at::zeros({num_tokens, num_topk}, at::dtype(at::kInt).device(device));
+    auto send_token_idx_ptr = send_token_idx.data_ptr<int>();
     for (int i = 0; i < num_tokens; ++i) {
         for (int j = 0; j < num_topk; ++j) {
-            int64_t expert_idx = topk_ptr[i * num_topk + j];
+            int64_t expert_idx = topk_idx_ptr[i * num_topk + j];
             if (expert_idx >= 0) {
                 int32_t cnt = local_expert_acc[expert_idx];
                 send_token_idx_ptr[i * num_topk + j] = cnt;
@@ -232,32 +231,31 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
             }
         }
     }
-    torch::Tensor send_data_offset = torch::cumsum(num_tokens_per_rank, 0);
 
     EP_HOST_ASSERT(recv_data.dim() == 1 and recv_data.is_contiguous());
     EP_HOST_ASSERT(recv_data.size(0) % num_experts == 0);
-    torch::Tensor recv_offset = torch::zero({num_tokens_per_rank.size(0)}, dtype(torch::kInt32).device(device));
-    torch::Tensor recv_count = torch::zero({num_tokens_per_rank.size(0)}, dtype(torch::kInt32).device(device));
-    auto recv_data_ptr = recv_data.data_ptr<int64_t>();
-    auto recv_count_ptr = recv_count.data_ptr<int64_t>();
-    auto recv_offset_ptr = recv_offset.data_ptr<int64_t>();
+    at::Tensor recv_offset = at::zeros({num_tokens_per_rank->size(0)}, at::dtype(at::kInt).device(device));
+    at::Tensor recv_count = at::zeros({num_tokens_per_rank->size(0)}, at::dtype(at::kInt).device(device));
+    auto recv_data_ptr = recv_data.data_ptr<int>();
+    auto recv_count_ptr = recv_count.data_ptr<int>();
+    auto recv_offset_ptr = recv_offset.data_ptr<int>();
     int64_t total_recv_tokens = 0;
-    for (int64_t i = 0; i < num_tokens_per_rank.size(0); ++i) {
+    for (int64_t i = 0; i < num_tokens_per_rank->size(0); ++i) {
         recv_count_ptr[i] = recv_data_ptr[2 * i];
         recv_offset_ptr[i] = recv_data_ptr[2 * i + 1];
         total_recv_tokens += recv_count_ptr[i];
     }
 
     at::Tensor new_x = x;
-    at::Tensor expert_ids = topk_idx;
+    at::Tensor expert_ids = topk_idx.value();
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = 0;
     int64_t global_bs = num_worst_tokens * num_ranks;
 
-    auto expandx_out = torch::zeros({total_recv_tokens, hidden}, torch::dtype(torch::kInt32).device(device));
-    auto dynamic_scales_out = torch::zeros({total_recv_tokens}, torch::dtype(torch::kInt32).device(device));
-    auto expand_idx_out = torch::zeros({total_recv_tokens, 3}, torch::dtype(torch::kInt32).device(device));
+    auto expandx_out = at::zeros({total_recv_tokens, hidden}, at::dtype(at::kInt).device(device));
+    auto dynamic_scales_out = at::zeros({total_recv_tokens}, at::dtype(at::kInt).device(device));
+    auto expand_idx_out = at::zeros({total_recv_tokens, 3}, at::dtype(at::kInt).device(device));
 
     EXEC_NPU_CMD(aclnnMoeDispatch,
         new_x,
@@ -279,9 +277,9 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
         dynamic_scales_out,
         expand_idx_out);
     
-    auto recv_topk_idx = torch::zeros({total_recv_tokens}, torch::dtype(torch::kInt32).device(device));
-    auto recv_topk_idx_ptr = recv_topk_idx.data_ptr<int64_t>();
-    auto expand_idx_out_ptr = expand_idx_out.data_ptr<int64_t>();
+    auto recv_topk_idx = at::zeros({total_recv_tokens}, at::dtype(at::kInt).device(device));
+    auto recv_topk_idx_ptr = recv_topk_idx.data_ptr<int>();
+    auto expand_idx_out_ptr = expand_idx_out.data_ptr<int>();
     for (int i = 0; i < total_recv_tokens; ++i) {
         recv_topk_idx_ptr[i] = expand_idx_out_ptr[3 * i + 2];
     }
@@ -298,9 +296,9 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     // Wait streams
     std::optional<EventHandle> event;
 
-    auto rank_prefix_matrix = torch::empty({num_ranks, num_ranks}, dtype(torch::kInt32).device(device));
-    auto channel_prefix_matrix = torch::empty({num_ranks, num_channels}, dtype(torch::kInt32).device(device));
-    auto recv_channel_prefix_matrix = torch::empty({num_ranks, num_channels}, dtype(torch::kInt32).device(device));
+    auto rank_prefix_matrix = at::empty({num_ranks, num_ranks}, at::dtype(at::kInt).device(device));
+    auto channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(device));
+    auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(device));
 
     // Return values
     return {expandx_out, dynamic_scales_out, recv_topk_idx, topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, expand_idx_out, recv_offset, event};
