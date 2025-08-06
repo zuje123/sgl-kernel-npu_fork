@@ -73,6 +73,83 @@ def test_main(args: argparse.Namespace, num_sms: int, local_rank: int, num_ranks
     print(f'[layout] Kernel performance: {t * 1000:.3f} ms', flush=True)
     print('', flush=True)
 
+    group.barrier()
+    time.sleep(1)
+
+    # Config
+    nvl_buffer_size = 256
+    config = deep_ep.Config(num_sms, 8, nvl_buffer_size)
+    
+    # Random data
+    x = torch.ones((num_tokens, hidden), dtype=torch.bfloat16, device='npu') * rank
+    x_pure_rand = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device='npu')
+    topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu') * rank
+    topk_weights_pure_rand = torch.randn((num_tokens, num_topk), dtype=torch.float32, device='npu')
+
+    # Test dispatch
+    # noinspection PyShadowingNames
+    def check_data(check_x, rank_prefix_matrix):
+        assert torch.allclose(check_x.amin(dim=1), check_x.amax(dim=1))
+        check_start = 0
+        for i in range(num_ranks):
+            check_end = rank_prefix_matrix[i][rank].item()
+            assert (check_x[check_start:check_end, :].int() - i).sum().item() == 0
+            check_start = check_end
+
+    for current_x in filter(lambda elem: elem is not None, (x_pure_rand, x)):
+        for with_topk in (False, True):
+            if local_rank == 0:
+                print(f'[testing] Running with {"FP8" if isinstance(current_x, tuple) else "BF16"}, {"with" if with_topk else "without"} top-k) ...', flush=True, end='')
+            dispatch_args = {'x': current_x, 'num_tokens_per_rank': num_tokens_per_rank,  'is_token_in_rank': is_token_in_rank,
+                             'num_tokens_per_expert': num_tokens_per_expert, 'config': config}
+            if with_topk:
+                dispatch_args.update({'topk_idx': topk_idx, 'topk_weights': topk_weights_pure_rand if current_x is x_pure_rand else topk_weights})
+
+            recv_x, recv_topk_idx, recv_topk_weights, recv_num_tokens_per_expert_list, handle, event = buffer.dispatch(**dispatch_args)
+
+            recv_x = per_token_cast_back(*recv_x) if isinstance(recv_x, tuple) else recv_x
+
+            # Checks
+            rank_prefix_matrix = handle[0]
+            assert gbl_num_tokens_per_rank[rank].item() == recv_x.size(0), f'{gbl_num_tokens_per_rank[rank].item()} != {recv_x.size(0)}'
+            assert gbl_num_tokens_per_expert.view(num_ranks, -1)[rank].tolist() == recv_num_tokens_per_expert_list
+            if current_x is not x_pure_rand:
+                check_data(recv_x, rank_prefix_matrix)
+            recv_topk_weights_clone = None
+            if with_topk:
+                # Check `topk_idx`
+                assert (recv_topk_idx.eq(-1) | ((recv_topk_idx >= 0) & (recv_topk_idx < (num_experts // num_ranks)))).sum().item() == recv_topk_idx.numel()
+                for i, count in enumerate(recv_num_tokens_per_expert_list):
+                    assert recv_topk_idx.eq(i).sum().item() == count
+
+                # Check `topk_weights`
+                recv_topk_weights_clone = recv_topk_weights.clone()
+                if current_x is not x_pure_rand:
+                    recv_topk_weights[recv_topk_idx.eq(-1)] = recv_topk_weights.amax(dim=1, keepdim=True).expand_as(recv_topk_weights)[recv_topk_idx.eq(-1)]
+                    check_data(recv_topk_weights, rank_prefix_matrix)
+
+            # Test `num_worst_tokens != 0`
+            if with_topk:
+                num_worst_tokens = num_tokens * num_ranks
+                dispatch_args.update({'num_worst_tokens': num_worst_tokens})
+                recv_worst_x, recv_worst_topk_idx, recv_worst_topk_weights, empty_list, _, event = buffer.dispatch(**dispatch_args)
+
+                recv_worst_x = per_token_cast_back(*recv_worst_x) if isinstance(recv_worst_x, tuple) else recv_worst_x
+                assert len(empty_list) == 0
+                assert num_worst_tokens == recv_worst_x.size(0)
+                assert num_worst_tokens == recv_worst_topk_idx.size(0)
+                assert num_worst_tokens == recv_worst_topk_weights.size(0)
+                assert torch.equal(recv_x, recv_worst_x[:recv_x.size(0)])
+                assert torch.equal(recv_topk_idx, recv_worst_topk_idx[:recv_x.size(0)])
+                assert torch.equal(recv_topk_weights_clone, recv_worst_topk_weights[:recv_x.size(0)])
+                assert torch.all(recv_worst_topk_idx[recv_x.size(0):] == -1).item()
+
+            if local_rank == 0:
+                print(' passed', flush=True)
+    if local_rank == 0:
+        print('', flush=True)
+
+
 # noinspection PyUnboundLocalVariable,PyShadowingNames
 def test_loop(local_rank: int, num_local_ranks: int, args: argparse.Namespace):
     rank, num_ranks, group = init_dist(local_rank, num_local_ranks)
