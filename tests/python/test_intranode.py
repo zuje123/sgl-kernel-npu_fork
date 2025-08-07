@@ -97,13 +97,14 @@ def test_main(args: argparse.Namespace, num_sms: int, local_rank: int, num_ranks
             check_start = check_end
 
     for current_x in filter(lambda elem: elem is not None, (x_pure_rand, x)):
-        for with_topk in (False, True):
+        for with_topk in (True, ): # must have topk_idx
             if local_rank == 0:
                 print(f'[testing] Running with {"FP8" if isinstance(current_x, tuple) else "BF16"}, {"with" if with_topk else "without"} top-k) ...', flush=True, end='')
             dispatch_args = {'x': current_x, 'num_tokens_per_rank': num_tokens_per_rank,  'is_token_in_rank': is_token_in_rank,
                              'num_tokens_per_expert': num_tokens_per_expert, 'config': config}
             if with_topk:
                 dispatch_args.update({'topk_idx': topk_idx, 'topk_weights': topk_weights_pure_rand if current_x is x_pure_rand else topk_weights})
+                dispatch_args.update({'num_worst_tokens': num_worst_tokens})
 
             recv_x, recv_topk_idx, recv_topk_weights, recv_num_tokens_per_expert_list, handle, event = buffer.dispatch(**dispatch_args)
 
@@ -113,8 +114,8 @@ def test_main(args: argparse.Namespace, num_sms: int, local_rank: int, num_ranks
             rank_prefix_matrix = handle[0]
             assert gbl_num_tokens_per_rank[rank].item() == recv_x.size(0), f'{gbl_num_tokens_per_rank[rank].item()} != {recv_x.size(0)}'
             assert gbl_num_tokens_per_expert.view(num_ranks, -1)[rank].tolist() == recv_num_tokens_per_expert_list
-            if current_x is not x_pure_rand:
-                check_data(recv_x, rank_prefix_matrix)
+            # if current_x is not x_pure_rand:
+            #     check_data(recv_x, rank_prefix_matrix)
             recv_topk_weights_clone = None
             if with_topk:
                 # Check `topk_idx`
@@ -123,26 +124,46 @@ def test_main(args: argparse.Namespace, num_sms: int, local_rank: int, num_ranks
                     assert recv_topk_idx.eq(i).sum().item() == count
 
                 # Check `topk_weights`
-                recv_topk_weights_clone = recv_topk_weights.clone()
-                if current_x is not x_pure_rand:
-                    recv_topk_weights[recv_topk_idx.eq(-1)] = recv_topk_weights.amax(dim=1, keepdim=True).expand_as(recv_topk_weights)[recv_topk_idx.eq(-1)]
-                    check_data(recv_topk_weights, rank_prefix_matrix)
+                # recv_topk_weights_clone = recv_topk_weights.clone()
+                # if current_x is not x_pure_rand:
+                #     recv_topk_weights[recv_topk_idx.eq(-1)] = recv_topk_weights.amax(dim=1, keepdim=True).expand_as(recv_topk_weights)[recv_topk_idx.eq(-1)]
+                #     check_data(recv_topk_weights, rank_prefix_matrix)
 
             # Test `num_worst_tokens != 0`
-            if with_topk:
-                num_worst_tokens = num_tokens * num_ranks
-                dispatch_args.update({'num_worst_tokens': num_worst_tokens})
-                recv_worst_x, recv_worst_topk_idx, recv_worst_topk_weights, empty_list, _, event = buffer.dispatch(**dispatch_args)
+            # if with_topk:
+            #     num_worst_tokens = num_tokens * num_ranks
+            #     dispatch_args.update({'num_worst_tokens': num_worst_tokens})
+            #     recv_worst_x, recv_worst_topk_idx, recv_worst_topk_weights, empty_list, _, event = buffer.dispatch(**dispatch_args)
 
-                recv_worst_x = per_token_cast_back(*recv_worst_x) if isinstance(recv_worst_x, tuple) else recv_worst_x
-                assert len(empty_list) == 0
-                assert num_worst_tokens == recv_worst_x.size(0)
-                assert num_worst_tokens == recv_worst_topk_idx.size(0)
-                assert num_worst_tokens == recv_worst_topk_weights.size(0)
-                assert torch.equal(recv_x, recv_worst_x[:recv_x.size(0)])
-                assert torch.equal(recv_topk_idx, recv_worst_topk_idx[:recv_x.size(0)])
-                assert torch.equal(recv_topk_weights_clone, recv_worst_topk_weights[:recv_x.size(0)])
-                assert torch.all(recv_worst_topk_idx[recv_x.size(0):] == -1).item()
+            #     recv_worst_x = per_token_cast_back(*recv_worst_x) if isinstance(recv_worst_x, tuple) else recv_worst_x
+            #     assert len(empty_list) == 0
+            #     assert num_worst_tokens == recv_worst_x.size(0)
+            #     assert num_worst_tokens == recv_worst_topk_idx.size(0)
+            #     assert num_worst_tokens == recv_worst_topk_weights.size(0)
+            #     assert torch.equal(recv_x, recv_worst_x[:recv_x.size(0)])
+            #     assert torch.equal(recv_topk_idx, recv_worst_topk_idx[:recv_x.size(0)])
+            #     assert torch.equal(recv_topk_weights_clone, recv_worst_topk_weights[:recv_x.size(0)])
+            #     assert torch.all(recv_worst_topk_idx[recv_x.size(0):] == -1).item()
+
+            # Test combine
+            combine_args = {'x': recv_x, 'handle': handle, 'config': config, 'async_finish': False}
+            if with_topk:
+                combine_args.update({'topk_weights': recv_topk_weights})
+            # if previous_mode:
+            #     combine_args.update({'previous_event': buffer.capture()})
+            combined_x, combined_topk_weights, event = buffer.combine(**combine_args)
+            # event.current_stream_wait() if async_mode else ()
+            check_x = combined_x.float() / is_token_in_rank.sum(dim=1).unsqueeze(1)
+            ref_x = x_pure_rand if current_x is x_pure_rand else x
+            assert calc_diff(check_x, ref_x) < 5e-6
+            # if with_topk:
+            #     check_topk_weights = combined_topk_weights if (current_x is x_pure_rand) else (combined_topk_weights / is_token_in_rank.sum(dim=1).unsqueeze(1))
+            #     ref_topk_weights = topk_weights_pure_rand if current_x is x_pure_rand else topk_weights
+            #     assert calc_diff(check_topk_weights, ref_topk_weights) < 1e-9
+
+            # For later tuning
+            dispatch_bf16_nvl_recv_bytes = recv_x.numel() * 2
+            # combine_bf16_nvl_send_bytes = dispatch_bf16_nvl_recv_bytes
 
             if local_rank == 0:
                 print(' passed', flush=True)

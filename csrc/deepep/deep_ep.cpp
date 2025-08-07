@@ -251,7 +251,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = 0;
-    int64_t global_bs = num_worst_tokens * num_ranks;
+    int64_t global_bs = num_worst_tokens;
 
     auto expandx_out = at::zeros({total_recv_tokens, hidden}, at::dtype(at::kInt).device(device));
     auto dynamic_scales_out = at::zeros({total_recv_tokens}, at::dtype(at::kInt).device(device));
@@ -277,11 +277,17 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
         dynamic_scales_out,
         expand_idx_out);
     
-    auto recv_topk_idx = at::zeros({total_recv_tokens}, at::dtype(at::kInt).device(device));
-    auto recv_topk_idx_ptr = recv_topk_idx.data_ptr<int>();
-    auto expand_idx_out_ptr = expand_idx_out.data_ptr<int>();
-    for (int i = 0; i < total_recv_tokens; ++i) {
-        recv_topk_idx_ptr[i] = expand_idx_out_ptr[3 * i + 2];
+    auto recv_topk_idx = std::optional<at::Tensor>();
+    auto recv_topk_weights = std::optional<at::Tensor>();
+    if (topk_idx.has_value()) {
+        auto recv_topk_idx = at::empty({total_recv_tokens, num_topk}, topk_idx->options());
+        auto recv_topk_idx_ptr = recv_topk_idx.data_ptr<int>();
+        auto expand_idx_out_ptr = expand_idx_out.data_ptr<int>();
+        for (int i = 0; i < total_recv_tokens; ++i) {
+            recv_topk_idx_ptr[i * num_topk] = expand_idx_out_ptr[3 * i + 2];
+        }
+
+        recv_topk_weights = torch::empty({total_recv_tokens, num_topk}, topk_weights->options());
     }
 
     std::vector<int> num_recv_tokens_per_expert_list;
@@ -301,7 +307,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(device));
 
     // Return values
-    return {expandx_out, dynamic_scales_out, recv_topk_idx, topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, expand_idx_out, recv_offset, event};
+    return {expandx_out, dynamic_scales_out, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, expand_idx_out, recv_offset, event};
 }
 
 void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int hidden, int num_experts) {
