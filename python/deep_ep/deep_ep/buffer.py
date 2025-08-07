@@ -5,7 +5,7 @@ import torch.distributed as dist
 
 import deep_ep_cpp
 from deep_ep_cpp import Config, EventHandle
-from typing import Callable, Tuple, Optional
+from typing import Callable, Tuple, Optional, Union, List
 from .utils import EventOverlap
 
 class Buffer:
