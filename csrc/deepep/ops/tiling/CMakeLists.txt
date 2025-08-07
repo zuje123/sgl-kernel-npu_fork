@@ -68,7 +68,7 @@ file(GLOB_RECURSE pregen_file
 )
 
 file(COPY ${pregen_file} DESTINATION ${ASCEND_AUTOGEN_PATH})
-file(GLOB aclnn_src ${ASCEND_AUTOGEN_PATH}/aclnn_*.cpp)
+file(GLOB aclnn_src ${ASCEND_AUTOGEN_PATH}/aclnn*.cpp)
 file(GLOB aclnn_inc ${ASCEND_AUTOGEN_PATH}/aclnn_*.h)
 if(NOT ASCEND_PACK_SHARED_LIBRARY)
     add_library(cust_opapi SHARED ${aclnn_src})
