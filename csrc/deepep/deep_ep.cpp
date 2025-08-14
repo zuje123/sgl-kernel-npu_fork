@@ -512,7 +512,7 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     int64_t tp_rank = 0;
     int64_t expert_shard_type = 0;
     int64_t expert_token_nums_type = 1;
-    int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
+    int64_t global_bs = std::max(new_topk_idx.size(0), num_max_dispatch_tokens_per_rank) * num_ranks;
 
     std::string comm_log = "0";
     char *comm_log_ptr = const_cast<char *>(comm_log.c_str());
@@ -609,7 +609,7 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     int64_t tp_world_size = 1;
     int64_t tp_rankId = 0;
     int64_t expert_shared_type = 0;
-    int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
+    int64_t global_bs = std::max(new_idx.size(0), num_max_dispatch_tokens_per_rank) * num_ranks;
     int64_t out_dtype = 0;
     int64_t comm_quant_mode = 0;
     int64_t group_list_type = 0;

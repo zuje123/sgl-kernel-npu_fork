@@ -34,6 +34,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("get_rdma_rank", &deep_ep::Buffer::get_rdma_rank)
         .def("get_dispatch_layout", &deep_ep::Buffer::get_dispatch_layout)
         .def("clean_low_latency_buffer", &deep_ep::Buffer::clean_low_latency_buffer)
+        .def("intranode_dispatch", &deep_ep::Buffer::intranode_dispatch)
         .def("intranode_combine", &deep_ep::Buffer::intranode_combine)
         .def("low_latency_dispatch", &deep_ep::Buffer::low_latency_dispatch)
         .def("low_latency_combine", &deep_ep::Buffer::low_latency_combine);

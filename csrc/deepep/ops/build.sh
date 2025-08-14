@@ -6,6 +6,7 @@ ASCEND_HIGH_LV_API=/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux/include
 #TMP=/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux/include/aclnn/opdev/
 
 export CPATH=${ASCEND_TOOLKIT_ARCH_INCLUDE}/experiment/metadef/:${ASCEND_HIGH_LV_API}/:${CPATH}
+export OPS_PROJECT_NAME=aclnnInner
 
 if [ -z "$BASE_LIBS_PATH" ]; then 
   if [ -z "$ASCEND_HOME_PATH" ]; then 
