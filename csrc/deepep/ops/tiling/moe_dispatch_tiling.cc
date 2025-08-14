@@ -379,9 +379,9 @@ static ge::graphStatus CheckAttrs(
     // 校验输入x的dim 0并设bs
     const gert::StorageShape *xStorageShape = context->GetInputShape(X_INDEX);
     const int64_t xDim0 = xStorageShape->GetStorageShape().GetDim(0);
-    OP_TILING_CHECK((xDim0 > BS_UPPER_BOUND) || (xDim0 <= 0),
+    OP_TILING_CHECK((xDim0 > BS_UPPER_BOUND) || (xDim0 < 0),
         OP_LOGE(
-            nodeName, "xDim0(BS) is invalid. Should be between [1, %ld], but got xDim0=%ld.", BS_UPPER_BOUND, xDim0),
+            nodeName, "xDim0(BS) is invalid. Should be between [0, %ld], but got xDim0=%ld.", BS_UPPER_BOUND, xDim0),
         return ge::GRAPH_FAILED);
     tilingData.moeDispatchInfo.bs = static_cast<uint32_t>(xDim0);
 
@@ -445,7 +445,15 @@ static ge::graphStatus CheckTensorShape(gert::TilingContext *context, const char
     const gert::StorageShape *expandXStorageShape = context->GetOutputShape(OUTPUT_EXPAND_X_INDEX);
     const int64_t expandXDim0 = expandXStorageShape->GetStorageShape().GetDim(0);
     const int64_t expandXDim1 = expandXStorageShape->GetStorageShape().GetDim(1);
-
+    /* // 校验大小需要外界传入
+    OP_TILING_CHECK(expandXDim0 < static_cast<int64_t>(A),
+        OP_LOGE(nodeName,
+            "expandX's dim0 not greater than or equal to A, "
+            "expandX's dim0 is %ld, A is %ld.",
+            expandXDim0,
+            A),
+        return ge::GRAPH_FAILED);
+    */
     OP_TILING_CHECK(xDim1 != expandXDim1,
         OP_LOGE(nodeName,
             "expandX's dim1 not equal to xShape's dim1, "
@@ -458,11 +466,29 @@ static ge::graphStatus CheckTensorShape(gert::TilingContext *context, const char
     if (quantMode != NO_SCALES) {
         const gert::StorageShape *dynamicScalesStorageShape = context->GetOutputShape(OUTPUT_DYNAMIC_SCALES_INDEX);
         const int64_t dynamicScalesDim0 = dynamicScalesStorageShape->GetStorageShape().GetDim(0);
+        /*
+        OP_TILING_CHECK(dynamicScalesDim0 < static_cast<int64_t>(A),
+            OP_LOGE(nodeName,
+                "dynamicScales's dim0 should be equal to or greater than A, dynamicScales's dim0 is %ld, "
+                "A is %ld.",
+                dynamicScalesDim0,
+                A),
+            return ge::GRAPH_FAILED);
+        */
     }
 
     // 校验assistInfo的维度
     const gert::StorageShape *assistInfoStorageShape = context->GetOutputShape(OUTPUT_ASSIST_INFO_INDEX);
     const int64_t assistInfoDim0 = assistInfoStorageShape->GetStorageShape().GetDim(0);
+    /*
+    OP_TILING_CHECK(assistInfoDim0 < static_cast<int64_t>(A * TRIPLE),
+        OP_LOGE(nodeName,
+            "assistInfoDim0 < A * 3,"
+            " assistInfoDim0 is %ld, A * 3 is %ld.",
+            assistInfoDim0,
+            static_cast<int64_t>(A * TRIPLE)),
+        return ge::GRAPH_FAILED);
+    */
     return ge::GRAPH_SUCCESS;
 }
 
@@ -531,7 +557,6 @@ static ge::graphStatus MoeDispatchA3TilingFuncImpl(gert::TilingContext *context)
     std::string groupTp = "";
     uint32_t quantMode = NO_SCALES;
     uint32_t localMoeExpertNum = 1;
-    OP_LOGI(nodeName, "Enter MoeDispatch tiling check func.");
 
     // 获取入参属性
     OP_TILING_CHECK(GetAttrAndSetTilingData(context, nodeName, *tilingData, groupEp, groupTp) != ge::GRAPH_SUCCESS,
@@ -551,7 +576,6 @@ static ge::graphStatus MoeDispatchA3TilingFuncImpl(gert::TilingContext *context)
         return ge::GRAPH_FAILED);
 
     uint32_t epRankId = tilingData->moeDispatchInfo.epRankId;
-
     // 检查shape各维度并赋值h,k
     OP_TILING_CHECK(
         CheckTensorShape(context, nodeName, *tilingData, quantMode, static_cast<int64_t>(localMoeExpertNum)) !=
