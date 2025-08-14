@@ -49,6 +49,62 @@ class Buffer:
             self.rank, self.group_size, num_nvl_bytes, num_rdma_bytes, low_latency_mode, moe_all_to_all_group_name)
 
     @staticmethod
+    def get_dispatch_config(num_ranks: int) -> Config:
+        """
+        Get a recommended dispatch config.
+
+        Argument:
+            num_ranks: the number of ranks.
+
+        Returns:
+            config: the recommended config.
+        """
+
+        # TODO: automatically tune
+        config_map = {
+            2: Config(Buffer.num_sms, 24, 256, 6, 128),
+            4: Config(Buffer.num_sms, 6, 256, 6, 128),
+            8: Config(Buffer.num_sms, 6, 256, 6, 128),
+            16: Config(Buffer.num_sms, 36, 288, 20, 128),
+            24: Config(Buffer.num_sms, 8, 288, 32, 128),
+            32: Config(Buffer.num_sms, 32, 288, 32, 128),
+            64: Config(Buffer.num_sms, 20, 288, 28, 128),
+            128: Config(Buffer.num_sms, 20, 560, 32, 128),
+            144: Config(Buffer.num_sms, 32, 720, 12, 128),
+            160: Config(Buffer.num_sms, 28, 720, 12, 128),
+        }
+        assert num_ranks in config_map, f'Unsupported number of EP ranks: {num_ranks}'
+        return config_map[num_ranks]
+
+    @staticmethod
+    def get_combine_config(num_ranks: int) -> Config:
+        """
+        Get a recommended combine config.
+
+        Argument:
+            num_ranks: the number of ranks.
+
+        Returns:
+            config: the recommended config.
+        """
+
+        # TODO: automatically tune
+        config_map = {
+            2: Config(Buffer.num_sms, 10, 256, 6, 128),
+            4: Config(Buffer.num_sms, 9, 256, 6, 128),
+            8: Config(Buffer.num_sms, 4, 256, 6, 128),
+            16: Config(Buffer.num_sms, 4, 288, 12, 128),
+            24: Config(Buffer.num_sms, 1, 288, 8, 128),
+            32: Config(Buffer.num_sms, 1, 288, 8, 128),
+            64: Config(Buffer.num_sms, 1, 288, 20, 128),
+            128: Config(Buffer.num_sms, 1, 560, 12, 128),
+            144: Config(Buffer.num_sms, 2, 720, 8, 128),
+            160: Config(Buffer.num_sms, 2, 720, 8, 128),
+        }
+        assert num_ranks in config_map, f'Unsupported number of EP ranks: {num_ranks}'
+        return config_map[num_ranks]
+
+    @staticmethod
     def set_num_sms(new_num_sms: int) -> None:
         """
         Set the number of SMs to use in high-throughput kernels.
