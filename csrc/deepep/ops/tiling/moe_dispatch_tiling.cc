@@ -445,15 +445,7 @@ static ge::graphStatus CheckTensorShape(gert::TilingContext *context, const char
     const gert::StorageShape *expandXStorageShape = context->GetOutputShape(OUTPUT_EXPAND_X_INDEX);
     const int64_t expandXDim0 = expandXStorageShape->GetStorageShape().GetDim(0);
     const int64_t expandXDim1 = expandXStorageShape->GetStorageShape().GetDim(1);
-    /* // 校验大小需要外界传入
-    OP_TILING_CHECK(expandXDim0 < static_cast<int64_t>(A),
-        OP_LOGE(nodeName,
-            "expandX's dim0 not greater than or equal to A, "
-            "expandX's dim0 is %ld, A is %ld.",
-            expandXDim0,
-            A),
-        return ge::GRAPH_FAILED);
-    */
+
     OP_TILING_CHECK(xDim1 != expandXDim1,
         OP_LOGE(nodeName,
             "expandX's dim1 not equal to xShape's dim1, "
@@ -466,29 +458,11 @@ static ge::graphStatus CheckTensorShape(gert::TilingContext *context, const char
     if (quantMode != NO_SCALES) {
         const gert::StorageShape *dynamicScalesStorageShape = context->GetOutputShape(OUTPUT_DYNAMIC_SCALES_INDEX);
         const int64_t dynamicScalesDim0 = dynamicScalesStorageShape->GetStorageShape().GetDim(0);
-        /*
-        OP_TILING_CHECK(dynamicScalesDim0 < static_cast<int64_t>(A),
-            OP_LOGE(nodeName,
-                "dynamicScales's dim0 should be equal to or greater than A, dynamicScales's dim0 is %ld, "
-                "A is %ld.",
-                dynamicScalesDim0,
-                A),
-            return ge::GRAPH_FAILED);
-        */
     }
 
     // 校验assistInfo的维度
     const gert::StorageShape *assistInfoStorageShape = context->GetOutputShape(OUTPUT_ASSIST_INFO_INDEX);
     const int64_t assistInfoDim0 = assistInfoStorageShape->GetStorageShape().GetDim(0);
-    /*
-    OP_TILING_CHECK(assistInfoDim0 < static_cast<int64_t>(A * TRIPLE),
-        OP_LOGE(nodeName,
-            "assistInfoDim0 < A * 3,"
-            " assistInfoDim0 is %ld, A * 3 is %ld.",
-            assistInfoDim0,
-            static_cast<int64_t>(A * TRIPLE)),
-        return ge::GRAPH_FAILED);
-    */
     return ge::GRAPH_SUCCESS;
 }
 

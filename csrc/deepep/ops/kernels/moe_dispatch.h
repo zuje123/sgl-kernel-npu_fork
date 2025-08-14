@@ -3,7 +3,7 @@
 
 #include "kernel_operator.h"
 #include "kernel_tiling/kernel_tiling.h"
-#include "moe_distribute_base.h"
+#include "comm_group.h"
 #include "moe_dispatch_tiling.h"
 
 namespace MoeDispatchImpl {
@@ -18,6 +18,7 @@ constexpr uint64_t WIN_STATE_OFFSET = 500UL * 1024UL;
 constexpr uint64_t STATE_WIN_OFFSET = 950UL * 1024UL;
 constexpr uint64_t WIN_ADDR_ALIGN = 512UL;
 constexpr uint32_t EXPAND_IDX_INFO = 3U;  // expand_idx是按3元组保存信息，分别为rank_id token_id topk_id
+constexpr uint64_t COMBINE_STATE_WIN_OFFSET = 3UL * 1024UL * 1024UL;
 
 template <AscendC::HardEvent event>
 __aicore__ inline void SyncFunc()
@@ -37,9 +38,9 @@ template <TemplateMC2TypeClass>
 class MoeDispatch {
 public:
     __aicore__ inline MoeDispatch(){};
-    __aicore__ inline void Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset,
-        GM_ADDR send_tokenIdx, GM_ADDR recv_offset, GM_ADDR recv_count, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut,
-        GM_ADDR expandIdxOut, GM_ADDR workspaceGM, TPipe *pipe, const MoeDispatchTilingData *tilingData);
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset, GM_ADDR send_tokenIdx,
+        GM_ADDR recv_offset, GM_ADDR recv_count, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut, GM_ADDR expandIdxOut,
+        GM_ADDR workspaceGM, TPipe *pipe, const MoeDispatchTilingData *tilingData);
     __aicore__ inline void Process();
 
 private:
@@ -56,10 +57,10 @@ private:
     {
         uint32_t curRankId = ((ctxIdx == COMM_EP_IDX) ? epRankId : tpRankId);
         if (curRankId == rankId) {
-            return (GM_ADDR)(winContext_[ctxIdx]->localWindowsIn) + winDataSizeOffset;
+            return (GM_ADDR)(winContext_[ctxIdx]->localWindowsIn) + winDataSizeOffset + COMBINE_STATE_WIN_OFFSET;
         }
         return (GM_ADDR)(((HcclRankRelationResV2 *)(winContext_[ctxIdx]->remoteRes[rankId].nextDevicePtr))->windowsIn) +
-               winDataSizeOffset;
+               winDataSizeOffset + COMBINE_STATE_WIN_OFFSET;
     }
 
     __aicore__ inline GM_ADDR GetWindStateAddrByRankId(uint8_t ctxIdx, const int32_t rankId)
@@ -148,9 +149,9 @@ private:
 };
 
 template <TemplateMC2TypeClass>
-__aicore__ inline void MoeDispatch<TemplateMC2TypeFunc>::Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset, GM_ADDR send_tokenIdx, GM_ADDR recv_offset, GM_ADDR recv_count,
-    GM_ADDR expandXOut, GM_ADDR dynamicScalesOut, GM_ADDR expandIdxOut, GM_ADDR workspaceGM, TPipe *pipe,
-    const MoeDispatchTilingData *tilingData)
+__aicore__ inline void MoeDispatch<TemplateMC2TypeFunc>::Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset,
+    GM_ADDR send_tokenIdx, GM_ADDR recv_offset, GM_ADDR recv_count, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut,
+    GM_ADDR expandIdxOut, GM_ADDR workspaceGM, TPipe *pipe, const MoeDispatchTilingData *tilingData)
 {
     tpipe_ = pipe;
     blockIdx = GetBlockIdx();
@@ -486,6 +487,9 @@ __aicore__ inline void MoeDispatch<TemplateMC2TypeFunc>::ShareToOutput()
     DataCopyExtParams dataCopyOutParams{1U, static_cast<uint32_t>(statusNumPerCore * sizeof(int32_t)), 0U, 0U, 0U};
     DataCopyExtParams expandXCopyParams = {1U, static_cast<uint32_t>(h * sizeof(ExpandXOutType)), 0U, 0U, 0U};
     LocalTensor<int32_t> xTmpTensorInt;
+    AscendC::TQueSync<PIPE_MTE2, PIPE_S> recvCountLocalSync;
+    recvCountLocalSync.SetFlag(0);
+    recvCountLocalSync.WaitFlag(0);
     for (uint32_t i = startStatusId; i < endStatusId; ++i) {
         preCount = 0;
         if (likely(i != 0)) {
