@@ -340,7 +340,13 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     auto recv_topk_weights = std::optional<at::Tensor>();
     auto expand_idx_out_cpu = expand_idx_out.to(torch::kCPU);
     if (topk_idx.has_value()) {
-        recv_topk_idx = at::empty({total_recv_tokens, num_topk}, topk_idx->options());
+        auto recv_topk_idx_cpu = at::empty({total_recv_tokens, num_topk}, at::dtype(topk_idx->dtype()).device(at::kCPU));
+        auto recv_topk_idx_ptr = recv_topk_idx_cpu.data_ptr<int64_t>();
+        auto expand_idx_out_ptr = expand_idx_out_cpu.data_ptr<int>();
+        for (int i = 0; i < total_recv_tokens; ++i) {
+            recv_topk_idx_ptr[i * num_topk] = expand_idx_out_ptr[3 * i + 2];
+        }
+        recv_topk_idx = recv_topk_idx_cpu.to(x.device());
         recv_topk_weights = torch::empty({total_recv_tokens, num_topk}, topk_weights->options());
     }
     // Wait streams
