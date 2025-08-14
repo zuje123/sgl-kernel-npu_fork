@@ -80,6 +80,7 @@ function build_kernels()
 
 function main()
 {
+    build_kernels
     build_deepep
     make_deepep_package
 }
