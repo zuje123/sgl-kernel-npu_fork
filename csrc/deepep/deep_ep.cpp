@@ -58,8 +58,9 @@ Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
         if (topk_idx.size(0) != 0) {
             topk_blocks.emplace_back(topk_idx);
         }
+        int topk = static_cast<int>(topk_idx.size(1));
         for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_topk = torch::arange(0, 8, topk_idx.options()).reshape({1, 8});
+            at::Tensor tmp_topk = torch::arange(0, topk, topk_idx.options()).reshape({1, topk});
             topk_blocks.emplace_back(tmp_topk);
         }
         this->new_topk_idx = torch::cat(topk_blocks, 0);
@@ -131,13 +132,6 @@ Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
         is_token_in_rank,
         output_event
     );
-}
-
-std::string get_timestamp() {
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()
-    ).count();
-    return std::to_string(ms);
 }
 
 std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>, std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
@@ -287,11 +281,11 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     auto recv_count_ptr = recv_count_cpu.data_ptr<int>();
     auto recv_offset_ptr = recv_offset_cpu.data_ptr<int>();
     int64_t total_recv_tokens = 0;
-    int64_t max_send_num_tokens = 0;
+    int64_t num_max_dispatch_tokens_per_rank = 0;
 
     for (int64_t local_e = 0; local_e < num_local_experts; ++local_e) {
         for (int64_t src_rank = 0; src_rank < num_ranks; ++src_rank) {
-            int64_t global_expert_id = local_e * num_ranks + src_rank;
+            int64_t index = local_e * num_ranks + src_rank;
             int64_t pair_idx = send_per_group * (src_rank * num_local_experts + local_e);
 
             int recv_cnt = recv_data_ptr[pair_idx];        // count from this src_rank for this global_expert
@@ -299,9 +293,9 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
             int64_t send_num_tokens = recv_data_ptr[pair_idx + 2];   // all bs from rank
 
             total_recv_tokens += recv_cnt;
-            recv_count_ptr[global_expert_id] = total_recv_tokens;
-            recv_offset_ptr[global_expert_id] = recv_off;
-            max_send_num_tokens = std::max(max_send_num_tokens, send_num_tokens);
+            recv_count_ptr[index] = total_recv_tokens;
+            recv_offset_ptr[index] = recv_off;
+            num_max_dispatch_tokens_per_rank = std::max(num_max_dispatch_tokens_per_rank, send_num_tokens);
         }
     }
 
@@ -314,7 +308,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = 0;
-    int64_t global_bs = std::max(max_send_num_tokens * num_ranks, static_cast<int64_t>(num_worst_tokens));
+    int64_t global_bs = std::max(num_max_dispatch_tokens_per_rank * num_ranks, static_cast<int64_t>(num_worst_tokens));
 
     auto send_token_idx = send_token_idx_cpu.to(x.device());
     auto recv_offset = recv_offset_cpu.to(x.device());
@@ -324,7 +318,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     if (total_cnt == 0) {
         total_cnt = 1;
     }
-    auto expandx_out = at::full({total_cnt, hidden}, 3.0, x.options());
+    auto expandx_out = at::zeros({total_cnt, hidden}, x.options());
     auto dynamic_scales_out = at::zeros({total_cnt}, at::dtype(at::kFloat).device(x.device()));
     auto expand_idx_out = at::zeros({total_cnt * 3}, at::dtype(at::kInt).device(x.device()));
 
@@ -369,7 +363,8 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
 
     // Return values
-    return {expandx_out, dynamic_scales_out, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, expand_idx_out, recv_count, event};
+    return {expandx_out, dynamic_scales_out, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, 
+        rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, expand_idx_out, recv_count, event};
 }
 
 void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int hidden, int num_experts) {
@@ -485,9 +480,10 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
         } else {
             this->ori_x = x.clone();
         }
+        int topk = static_cast<int>(new_topk_idx.size(1));
         for (int i = 0; i < this->padding_cnt; i++) {
             at::Tensor tmp_x = torch::ones({1, 7168}, x.options());
-            at::Tensor tmp_topk = torch::arange(0, 8, topk_idx.options()).reshape({1, 8});
+            at::Tensor tmp_topk = torch::arange(0, topk, topk_idx.options()).reshape({1, topk});
             x_blocks.emplace_back(tmp_x);
             topk_blocks.emplace_back(tmp_topk);
         }
