@@ -133,6 +133,13 @@ Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
     );
 }
 
+std::string get_timestamp() {
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+    return std::to_string(ms);
+}
+
 std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>, std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
 Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
                            const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
@@ -211,25 +218,30 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
         scale_hidden_stride = static_cast<int>(x_scales->stride(1));
     }
 
+    std::string cur_time = get_timestamp();
+    std::cout << "====[send] rank: " << rank << ", bs: " << num_tokens << ", is_padding: " << is_padding << ", time: " << cur_time << std::endl;
+
     auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
-    at::Tensor send_data_cpu = at::zeros({num_tokens_per_expert->size(0) * 2}, options_cpu);
+    int send_per_group = 3; // (send_to_expert_num, send_to_expert_offset, send_rank_tokens)
+    at::Tensor send_data_cpu = at::zeros({num_experts * send_per_group}, options_cpu);
     at::Tensor num_tokens_per_expert_cpu = num_tokens_per_expert.value().to(torch::kCPU);
     auto num_tokens_per_expert_ptr = num_tokens_per_expert_cpu.data_ptr<int>();
     auto send_data_ptr = send_data_cpu.data_ptr<int>();
     int32_t prefix_sum = 0;
-    at::Tensor send_data_offset_cpu = at::zeros({num_tokens_per_expert->size(0)}, options_cpu);
+    at::Tensor send_data_offset_cpu = at::zeros({num_experts}, options_cpu);
     auto send_data_offset_ptr = send_data_offset_cpu.data_ptr<int>();
-    for (int i = 0; i < num_tokens_per_expert->size(0); ++i) {
-        send_data_ptr[i * 2] = num_tokens_per_expert_ptr[i];
-        send_data_ptr[i * 2 + 1] = prefix_sum;
+    for (int i = 0; i < num_experts; ++i) {
+        send_data_ptr[i * send_per_group] = num_tokens_per_expert_ptr[i];
+        send_data_ptr[i * send_per_group + 1] = prefix_sum;
+        send_data_ptr[i * send_per_group + 2] = num_tokens;
         send_data_offset_ptr[i] = prefix_sum;
         prefix_sum += num_tokens_per_expert_ptr[i];
     }
-    int64_t send_count = 2 * num_local_experts * num_ranks;
+    int64_t send_count = send_per_group * num_local_experts * num_ranks;
 
     auto send_data = send_data_cpu.to(x.device());
     auto send_data_offset = send_data_offset_cpu.to(x.device());
-    at::Tensor recv_data = at::zeros({num_tokens_per_expert->size(0) * 2}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor recv_data = at::zeros({num_experts * send_per_group}, at::dtype(at::kInt).device(x.device()));
 
     // get ep name
     char hcom_ep_name[128];
@@ -271,25 +283,28 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
 
     EP_HOST_ASSERT(recv_data.dim() == 1 and recv_data.is_contiguous());
     EP_HOST_ASSERT(recv_data.size(0) % num_experts == 0);
-    at::Tensor recv_offset_cpu = at::zeros({num_tokens_per_expert->size(0)}, options_cpu);
-    at::Tensor recv_count_cpu = at::zeros({num_tokens_per_expert->size(0)}, options_cpu);
+    at::Tensor recv_offset_cpu = at::zeros({num_experts}, options_cpu);
+    at::Tensor recv_count_cpu = at::zeros({num_experts}, options_cpu);
     auto recv_data_cpu = recv_data.to(at::kCPU);
     auto recv_data_ptr = recv_data_cpu.data_ptr<int>();
     auto recv_count_ptr = recv_count_cpu.data_ptr<int>();
     auto recv_offset_ptr = recv_offset_cpu.data_ptr<int>();
     int64_t total_recv_tokens = 0;
+    int64_t max_send_num_tokens = 0;
 
     for (int64_t local_e = 0; local_e < num_local_experts; ++local_e) {
         for (int64_t src_rank = 0; src_rank < num_ranks; ++src_rank) {
             int64_t global_expert_id = local_e * num_ranks + src_rank;
-            int64_t pair_idx = 2 * (src_rank * num_local_experts + local_e);
+            int64_t pair_idx = send_per_group * (src_rank * num_local_experts + local_e);
 
             int recv_cnt = recv_data_ptr[pair_idx];        // count from this src_rank for this global_expert
             int recv_off = recv_data_ptr[pair_idx + 1];    // offset in that src_rank's window
+            int64_t send_num_tokens = recv_data_ptr[pair_idx + 2];   // all bs from rank
 
             total_recv_tokens += recv_cnt;
             recv_count_ptr[global_expert_id] = total_recv_tokens;
             recv_offset_ptr[global_expert_id] = recv_off;
+            max_send_num_tokens = std::max(max_send_num_tokens, send_num_tokens);
         }
     }
 
@@ -302,7 +317,9 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = 0;
-    int64_t global_bs = std::max(2000 * num_ranks, static_cast<int64_t>(num_worst_tokens));
+    int64_t global_bs = std::max(max_send_num_tokens * num_ranks, static_cast<int64_t>(num_worst_tokens));
+
+    std::cout << "====[recv] rank: " << rank << ", bs: " << max_send_num_tokens << ", is_padding: " << is_padding << ", global_bs: " << global_bs << ", time: " << cur_time << std::endl;
 
     auto send_token_idx = send_token_idx_cpu.to(x.device());
     auto recv_offset = recv_offset_cpu.to(x.device());
