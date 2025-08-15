@@ -218,9 +218,6 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
         scale_hidden_stride = static_cast<int>(x_scales->stride(1));
     }
 
-    std::string cur_time = get_timestamp();
-    std::cout << "====[send] rank: " << rank << ", bs: " << num_tokens << ", is_padding: " << is_padding << ", time: " << cur_time << std::endl;
-
     auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
     int send_per_group = 3; // (send_to_expert_num, send_to_expert_offset, send_rank_tokens)
     at::Tensor send_data_cpu = at::zeros({num_experts * send_per_group}, options_cpu);
@@ -318,8 +315,6 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     int64_t tp_rank = 0;
     int64_t quant_mode = 0;
     int64_t global_bs = std::max(max_send_num_tokens * num_ranks, static_cast<int64_t>(num_worst_tokens));
-
-    std::cout << "====[recv] rank: " << rank << ", bs: " << max_send_num_tokens << ", is_padding: " << is_padding << ", global_bs: " << global_bs << ", time: " << cur_time << std::endl;
 
     auto send_token_idx = send_token_idx_cpu.to(x.device());
     auto recv_offset = recv_offset_cpu.to(x.device());
