@@ -8,6 +8,7 @@
 
 
 namespace deep_ep {
+constexpr int PADDING_SIZE = 3;
 
 Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes, bool low_latency_mode,
                std::string moe_all_to_all_group_name)
@@ -51,9 +52,9 @@ Buffer::get_dispatch_layout(const torch::Tensor& topk_idx, int num_experts,
 
     this->new_topk_idx = topk_idx;
     // for padding
-    if (topk_idx.size(0) <= 2) {
+    if (topk_idx.size(0) < PADDING_SIZE) {
         this->is_padding = true;
-        this->padding_cnt = 3 - topk_idx.size(0);
+        this->padding_cnt = PADDING_SIZE - topk_idx.size(0);
         std::vector<at::Tensor> topk_blocks;
         if (topk_idx.size(0) != 0) {
             topk_blocks.emplace_back(topk_idx);
@@ -147,9 +148,9 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
 
     at::Tensor new_x = x;
     // for padding
-    if (topk_idx->size(0) <= 2) {
+    if (topk_idx->size(0) < PADDING_SIZE) {
         this->is_padding = true;
-        this->padding_cnt = 3 - topk_idx->size(0);
+        this->padding_cnt = PADDING_SIZE - topk_idx->size(0);
         std::vector<at::Tensor> x_blocks;
         if (topk_idx->size(0) != 0) {
             x_blocks.emplace_back(x);
@@ -441,10 +442,10 @@ Buffer::intranode_combine(const torch::Tensor& x, const torch::Tensor& topk_idx,
         combined_x);
 
     if (this->is_padding) {
-        if (this->padding_cnt == 3) {
+        if (this->padding_cnt == PADDING_SIZE) {
             combined_x = this->ori_x;
         } else {
-            combined_x = combined_x.slice(0, 0, 3 - this->padding_cnt);
+            combined_x = combined_x.slice(0, 0, PADDING_SIZE - this->padding_cnt);
         }
         is_padding = false;
     }
@@ -462,9 +463,9 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     EP_HOST_ASSERT(low_latency_mode);
     at::Tensor new_x = x;
     this->new_topk_idx = topk_idx;
-    if (topk_idx.size(0) <= 2) {
+    if (topk_idx.size(0) < PADDING_SIZE) {
         this->is_padding = true;
-        this->padding_cnt = 3 - topk_idx.size(0);
+        this->padding_cnt = PADDING_SIZE - topk_idx.size(0);
         std::vector<at::Tensor> x_blocks;
         std::vector<at::Tensor> topk_blocks;
         if (topk_idx.size(0) != 0) {
@@ -487,12 +488,14 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     auto num_tokens = static_cast<int>(new_x.size(0)), hidden = static_cast<int>(new_x.size(1));
     auto num_scales = hidden / 128, num_topk = static_cast<int>(new_topk_idx.size(1));
     auto num_local_experts = num_experts / (num_ranks - shared_expert_rank_num);
+
+    int64_t global_bs = std::max(new_topk_idx.size(0), num_max_dispatch_tokens_per_rank) * num_ranks;
     auto num_max_tokens = 0;
     if (rank < shared_expert_rank_num) {
-        num_max_tokens = num_max_dispatch_tokens_per_rank * num_ranks / shared_expert_rank_num;
+        num_max_tokens = global_bs / shared_expert_rank_num;
         num_local_experts = 1;
     } else { // moe expert
-        num_max_tokens = num_max_dispatch_tokens_per_rank * num_ranks * num_local_experts;
+        num_max_tokens = global_bs * num_local_experts;
     }
     auto max_size = std::max(num_tokens * num_topk, num_max_tokens * 128);
 
@@ -513,7 +516,6 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     int64_t tp_rank = 0;
     int64_t expert_shard_type = 0;
     int64_t expert_token_nums_type = 1;
-    int64_t global_bs = std::max(new_topk_idx.size(0), num_max_dispatch_tokens_per_rank) * num_ranks;
 
     std::string comm_log = "0";
     std::vector<char> comm_log_buf(comm_log.begin(), comm_log.end());
@@ -577,7 +579,7 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     at::Tensor new_scales = topk_weights;
     if (this->is_padding) {
         std::vector<at::Tensor> scales_blocks;
-        if (this->padding_cnt != 3) {
+        if (this->padding_cnt != PADDING_SIZE) {
             scales_blocks.emplace_back(topk_weights);
         }
         for (int i = 0; i < this->padding_cnt; i++) {
@@ -657,10 +659,10 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
         comm_log_ptr,
         combined_x);
     if (this->is_padding) {
-        if (this->padding_cnt == 3) {
+        if (this->padding_cnt == PADDING_SIZE) {
             combined_x = this->ori_x;
         } else {
-            combined_x = combined_x.slice(0, 0, 3 - this->padding_cnt);
+            combined_x = combined_x.slice(0, 0, PADDING_SIZE - this->padding_cnt);
         }
         is_padding = false;
     }
