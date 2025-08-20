@@ -241,7 +241,7 @@ class Buffer:
                                                 num_tokens_per_rank, is_token_in_rank, num_tokens_per_expert, 0, None, None,
                                                 expert_alignment, num_worst_tokens, config,
                                                 getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream)
-            handle = (rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, is_token_in_rank, send_head, topk_idx)
+            handle = (rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, is_token_in_rank, send_head, topk_idx, topk_weights)
             return (recv_x, recv_x_scales) if x_scales is not None else recv_x, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
 
         # noinspection PyTypeChecker
@@ -274,10 +274,10 @@ class Buffer:
             event: the event after executing the kernel (valid only if `async_finish` is set).
         """
         # NOTES: the second `_` is for the sending side, so we should use the third one
-        rank_prefix_matrix, _, channel_prefix_matrix, src_idx, is_recv_token_in_rank, send_head, topk_idx = handle
+        rank_prefix_matrix, _, channel_prefix_matrix, src_idx, is_recv_token_in_rank, send_head, topk_idx, topk_weights_ori = handle
 
         # Launch the kernel
-        recv_x, recv_topk_weights, event = self.runtime.intranode_combine(x, topk_idx, topk_weights, src_idx, send_head)
+        recv_x, recv_topk_weights, event = self.runtime.intranode_combine(x, topk_idx, topk_weights_ori, src_idx, send_head)
         return recv_x, recv_topk_weights, EventOverlap(event)
 
     # noinspection PyTypeChecker
