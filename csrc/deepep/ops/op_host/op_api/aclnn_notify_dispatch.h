@@ -1,8 +1,4 @@
 
-/*
- * calution: this file was generated automaticlly donot change it.
-*/
-
 #ifndef ACLNN_NOTIFY_DISPATCH_H_
 #define ACLNN_NOTIFY_DISPATCH_H_
 

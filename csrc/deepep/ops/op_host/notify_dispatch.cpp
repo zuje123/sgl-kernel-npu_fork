@@ -23,27 +23,21 @@ public:
         this->Attr("local_rank_size").Int();
         this->Attr("local_rank_id").Int();
 
-        OpAICoreConfig aicore_config_A2;
-        aicore_config_A2.DynamicCompileStaticFlag(true)
+        OpAICoreConfig aicore_config_base;
+        aicore_config_base.DynamicCompileStaticFlag(true)
             .DynamicFormatFlag(true)
             .DynamicRankSupportFlag(true)
             .DynamicShapeSupportFlag(true)
             .NeedCheckSupportFlag(false)
             .PrecisionReduceFlag(true)
             .ExtendCfgInfo("aclnnSupport.value", "support_aclnn")
-            .ExtendCfgInfo("jitCompile.flag", "static_false")
             .ExtendCfgInfo("multiKernelSupportDynamicGraph.value", "multi_kernel");
 
-        OpAICoreConfig aicore_config;
-        aicore_config.DynamicCompileStaticFlag(true)
-            .DynamicFormatFlag(true)
-            .DynamicRankSupportFlag(true)
-            .DynamicShapeSupportFlag(true)
-            .NeedCheckSupportFlag(false)
-            .PrecisionReduceFlag(true)
-            .ExtendCfgInfo("aclnnSupport.value", "support_aclnn")
-            .ExtendCfgInfo("jitCompile.flag", "static_true")
-            .ExtendCfgInfo("multiKernelSupportDynamicGraph.value", "multi_kernel");
+        OpAICoreConfig aicore_config_A2 = aicore_config_base;
+        aicore_config_A2.ExtendCfgInfo("jitCompile.flag", "static_false");
+
+        OpAICoreConfig aicore_config = aicore_config_base;
+        aicore_config.ExtendCfgInfo("jitCompile.flag", "static_true");
 
         this->AICore().AddConfig("ascend910_93", aicore_config);
         this->AICore().AddConfig("ascend910b", aicore_config_A2);

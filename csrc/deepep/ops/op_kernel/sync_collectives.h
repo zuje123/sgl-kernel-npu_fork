@@ -291,7 +291,7 @@ private:
     __aicore__ inline int64_t MergeMagicWithValue(int32_t magic, int32_t value)
     {
         // Merge magic as the high bits and eventID as the low bits into a value for comparison
-        return (static_cast<int64_t>(magic) << MAGIC_OFFSET) | static_cast<int64_t>(value);
+        return (static_cast<int64_t>(static_cast<uint32_t>(magic)) << MAGIC_OFFSET) | static_cast<int64_t>(value);
     }
 
     __aicore__ inline __gm__ int64_t* GetInnerFlagAddr(int64_t flagRank, int64_t flagBlock)
@@ -304,7 +304,7 @@ private:
         return (__gm__ int64_t*)(shareAddrs[flagRank]) + segmentCount + flagBlock * FLAG_UNIT_INT_NUM;
     }
 
-    // Wait for a部分 synchronization flag within a rank
+    // Wait for a part of synchronization flags within a rank
     __aicore__ inline void WaitOneRankPartFlag(__gm__ int64_t* waitAddr, int64_t flagNum, int64_t checkValue)
     {
         GlobalTensor<int64_t> globalWait;
@@ -397,7 +397,7 @@ private:
             isSync = false;
             waitTimes++;
 
-            if (waitTimes >= (timeout * MAX_WAIT_ROUND_UNIT)) {
+            if (timeout > INT64_MAX / MAX_WAIT_ROUND_UNIT || waitTimes >= (timeout * MAX_WAIT_ROUND_UNIT)) {
                 isSync = true;
                 return v; // Return the read flag value
             }

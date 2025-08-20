@@ -31,7 +31,7 @@ class NotifyDispatch {
     constexpr static int64_t RANK_NUM_PER_NODE = 16;
     constexpr static int64_t SIO_NUM = 2;  // Depth of a single shared queue
     constexpr static int64_t MAX_CORE_NUM = 48;
-    constexpr static int64_t MAX_RANK_PER_CORE = 6;
+    constexpr static int64_t MAX_RANK_PER_CORE = 8;
     constexpr static int64_t MULTI_RANK_SIZE = 48;
     constexpr static int64_t MAX_BUFFER_NUMBER = 10;
 
@@ -120,7 +120,7 @@ private:
     __aicore__ inline int64_t MergeMagicWithValue(int32_t magic, int32_t value)
     {
         // magic as the high part, eventID as the low part, combined into a value for comparison
-        return (static_cast<int64_t>(magic) << MAGIC_OFFSET) | static_cast<int64_t>(value);
+        return (static_cast<int64_t>(static_cast<uint32_t>(magic)) << MAGIC_OFFSET) | static_cast<int64_t>(value);
     }
 
     __aicore__ inline void ShareToShareSlice()
@@ -129,7 +129,6 @@ private:
         int64_t copyOffset = blockIdx * rankNumPerCore;
         copyLen = rankSize - copyOffset < rankNumPerCore ? rankSize - copyOffset : rankNumPerCore;
         if (copyLen > 0) {
-            int sendOffset_ = 0;
             int checkRank[MAX_RANK_PER_CORE];
             for (int i = copyOffset; i < copyOffset + copyLen; ++i) {
                 checkRank[i - copyOffset] = i + rank % copyLen;

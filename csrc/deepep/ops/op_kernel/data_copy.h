@@ -24,7 +24,6 @@ FORCE_INLINE_AICORE void SetAtomicOpType(int op)
             break;
         default:
             AscendC::SetAtomicNone();
-            ;
     }
 }
 
