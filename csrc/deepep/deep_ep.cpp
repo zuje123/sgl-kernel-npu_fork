@@ -308,7 +308,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     at::Tensor expert_ids = new_topk_idx.to(at::kInt);
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
-    int64_t quant_mode = 0;
+    int64_t quant_mode = 2;  // enable quant
     int64_t global_bs = std::max(num_max_dispatch_tokens_per_rank * num_ranks, static_cast<int64_t>(num_worst_tokens));
 
     auto send_token_idx = send_token_idx_cpu.to(x.device());
@@ -319,7 +319,7 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     if (total_cnt == 0) {
         total_cnt = 1;
     }
-    auto expandx_out = at::zeros({total_cnt, hidden}, x.options());
+    auto expandx_out = at::zeros({total_cnt, hidden}, at::dtype(at::kChar).device(x.device()));
     auto dynamic_scales_out = at::zeros({total_cnt}, at::dtype(at::kFloat).device(x.device()));
     auto expand_idx_out = at::zeros({total_cnt * 3}, at::dtype(at::kInt).device(x.device()));
 

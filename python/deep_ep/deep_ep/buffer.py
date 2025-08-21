@@ -242,7 +242,8 @@ class Buffer:
                                                 expert_alignment, num_worst_tokens, config,
                                                 getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream)
             handle = (rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, is_token_in_rank, send_head, topk_idx, topk_weights)
-            return (recv_x, recv_x_scales) if x_scales is not None else recv_x, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
+            # TODO: 当不支持 fp8 时，x_scales为None，此时如何区分是否开启量化
+            return (recv_x, recv_x_scales), recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
 
         # noinspection PyTypeChecker
     def combine(self, x: torch.Tensor, handle: Tuple,
