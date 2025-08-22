@@ -9,6 +9,7 @@
 
 namespace deep_ep {
 constexpr int PADDING_SIZE = 3;
+constexpr int NORMAL_MAX_BS_SIZE = 8000;
 
 Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes, bool low_latency_mode,
                std::string moe_all_to_all_group_name)
@@ -310,15 +311,17 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     int64_t tp_rank = 0;
     int64_t quant_mode = 2;  // enable quant
     int64_t global_bs = std::max(num_max_dispatch_tokens_per_rank * num_ranks, static_cast<int64_t>(num_worst_tokens));
+    EP_HOST_ASSERT(global_bs <= NORMAL_MAX_BS_SIZE * num_ranks); // prefill support max bs=8000
 
     auto send_token_idx = send_token_idx_cpu.to(x.device());
     auto recv_offset = recv_offset_cpu.to(x.device());
     auto recv_count = recv_count_cpu.to(x.device());
 
-    int total_cnt = total_recv_tokens;
+    int64_t total_cnt = total_recv_tokens;
     if (total_cnt == 0) {
         total_cnt = 1;
     }
+    EP_HOST_ASSERT(total_cnt <= NORMAL_MAX_BS_SIZE * num_ranks * std::min(num_topk, num_local_experts));
     auto expandx_out = at::zeros({total_cnt, hidden}, at::dtype(at::kChar).device(x.device()));
     auto dynamic_scales_out = at::zeros({total_cnt}, at::dtype(at::kFloat).device(x.device()));
     auto expand_idx_out = at::zeros({total_cnt * 3}, at::dtype(at::kInt).device(x.device()));
