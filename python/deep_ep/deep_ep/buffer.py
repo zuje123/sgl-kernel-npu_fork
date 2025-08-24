@@ -214,8 +214,9 @@ class Buffer:
             allocate_on_comm_stream: control whether all the allocated tensors' ownership to be on the communication stream.
 
         Returns:
-            recv_x: received tokens, the same type and tuple as the input `x`, but the number of tokens equals to the
-                received token count.
+            recv_x: received tokens, the first element is a `torch.Tensor` shaped as `[received_token_count, hidden]` with
+                `torch.int8`, the second tensor is the corresponding scales for the first element with shape `[received_token_count]`
+                with `torch.float`.
             recv_topk_idx: received expert indices.
             recv_topk_weights: received expert weights.
             num_recv_tokens_per_expert_list: Python list shaped `[num_local_experts]`, the received token count by
