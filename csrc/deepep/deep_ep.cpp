@@ -529,6 +529,7 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     } else {
         HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
     }
+    char hcom_tp_name[128] = {0};
 
     EXEC_NPU_CMD(aclnnMoeDistributeDispatchV2,
         new_x,
@@ -540,7 +541,7 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
         num_ranks,      // rankSize
         rank,           // rankId
         num_experts,
-        hcom_ep_name,           // tp
+        hcom_tp_name,           // tp
         tp_size,               // tp_size
         tp_rank,               // tp_rank
         expert_shard_type,            // expert_shard_type
@@ -601,6 +602,7 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     } else {
         HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
     }
+    char hcom_tp_name[128] = {0};
 
     auto device = x.device();
     at::Tensor expand_x = x;
@@ -646,7 +648,7 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
         num_ranks,
         rank,
         num_experts,
-        hcom_ep_name,
+        hcom_tp_name,
         tp_world_size,
         tp_rankId,
         expert_shared_type,
