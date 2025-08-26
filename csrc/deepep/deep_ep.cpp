@@ -283,8 +283,10 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
     auto recv_offset_ptr = recv_offset_cpu.data_ptr<int>();
     int64_t total_recv_tokens = 0;
     int64_t num_max_dispatch_tokens_per_rank = 0;
+    std::vector<int> num_recv_tokens_per_expert_list;
 
     for (int64_t local_e = 0; local_e < num_local_experts; ++local_e) {
+        int64_t local_expert_recv_tokens = 0;
         for (int64_t src_rank = 0; src_rank < num_ranks; ++src_rank) {
             int64_t index = local_e * num_ranks + src_rank;
             int64_t pair_idx = send_per_group * (src_rank * num_local_experts + local_e);
@@ -297,12 +299,10 @@ Buffer::intranode_dispatch(const at::Tensor& x, const std::optional<at::Tensor>&
             recv_count_ptr[index] = total_recv_tokens;
             recv_offset_ptr[index] = recv_off;
             num_max_dispatch_tokens_per_rank = std::max(num_max_dispatch_tokens_per_rank, send_num_tokens);
-        }
-    }
 
-    std::vector<int> num_recv_tokens_per_expert_list;
-    for (int i = 0; i < num_local_experts; ++i) {
-        num_recv_tokens_per_expert_list.push_back(recv_count_ptr[(i + 1) * num_ranks - 1]);
+            local_expert_recv_tokens += recv_cnt;
+        }
+        num_recv_tokens_per_expert_list.push_back(local_expert_recv_tokens);
     }
 
     at::Tensor expert_ids = new_topk_idx.to(at::kInt);
