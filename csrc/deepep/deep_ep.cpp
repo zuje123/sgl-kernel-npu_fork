@@ -506,7 +506,7 @@ std::tuple<at::Tensor, std::optional<at::Tensor>, at::Tensor, at::Tensor, at::Te
     auto expandIdx = at::empty({max_size}, at::dtype(at::kInt).device(device));
     auto ep_recv_count = at::empty({num_local_experts * num_ranks}, at::dtype(at::kInt).device(device));
     auto tp_recv_count = at::empty({1}, at::dtype(at::kInt).device(device));
-    auto packed_recv_count  = at::empty({num_local_experts}, at::dtype(at::kLong).device(device));
+    auto packed_recv_count = at::empty({num_local_experts}, at::dtype(at::kLong).device(device));
     auto expandScales = at::empty({1}, at::dtype(at::kFloat).device(device));
     at::Tensor scales;
     at::Tensor activateMask;
