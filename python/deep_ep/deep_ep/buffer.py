@@ -232,19 +232,19 @@ class Buffer:
         if isinstance(x, tuple):
             raise NotImplementedError("Not support fp8")
         x_scales = None
+        use_quant = True
 
         if handle is not None:
             raise NotImplementedError("Optional communication handle is not supported yet.")
         else:
-            quantize = True
             assert num_tokens_per_rank is not None and is_token_in_rank is not None and num_tokens_per_expert is not None
             recv_x, recv_x_scales, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, send_head, event = \
                 self.runtime.intranode_dispatch(x, x_scales, topk_idx, topk_weights,
                                                 num_tokens_per_rank, is_token_in_rank, num_tokens_per_expert, 0, None, None,
                                                 expert_alignment, num_worst_tokens, config,
-                                                getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream, quantize)
+                                                getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream, use_quant)
             handle = (rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, is_token_in_rank, send_head, topk_idx, topk_weights)
-            return (recv_x, recv_x_scales), recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
+            return (recv_x, recv_x_scales) if use_quant else recv_x, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
 
         # noinspection PyTypeChecker
     def combine(self, x: torch.Tensor, handle: Tuple,
