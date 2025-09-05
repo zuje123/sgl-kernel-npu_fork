@@ -19,6 +19,25 @@
     printf("\n");
 #define OP_LOGD(opname, ...)
 
+#define OPS_CHECK_NULL_WITH_CONTEXT(context, ptr)            \
+    if ((ptr) == nullptr)                                    \
+    {                                                        \
+        std::printf("nullptr error!");                       \
+        return ge::GRAPH_SUCCESS;                            \
+    }
+
+#define OPS_CHECK(COND, LOG_FUNC, EXPR)                      \
+    if (COND) {                                              \
+        LOG_FUNC;                                            \
+        EXPR;                                                \
+    }
+
+#define OP_CHECK(COND, LOG_FUNC, EXPR)                       \
+    if (COND) {                                              \
+        LOG_FUNC;                                            \
+        EXPR;                                                \
+    }
+
 namespace optiling {
 
 #define VECTOR_INNER_ERR_REPORT_TILIING(op_name, err_msg, ...)   \
