@@ -26,20 +26,21 @@
 #include <cstdint>
 #include <string>
 #include <type_traits>
-#include "../../common/ophost/mc2_tiling_utils.h"
+#include "mc2_tiling_utils.h"
 #include "register/tilingdata_base.h"
 #include "tiling/tiling_api.h"
-#include "../../common/ophost/matmul_tiling/op_log.h"
-#include "../../common/ophost/op_util.h"
-#include "../../common/ophost/hcom_topo_info.h"
-#include "../../common/ophost/matmul_tiling/error_log.h"
-#include "../../common/ophost/matmul_tiling/error_util.h"
+// #include "../../common/ophost/matmul_tiling/op_log.h"
+// #include "../../common/ophost/op_util.h"
+// #include "../../common/ophost/hcom_topo_info.h"
+#include "error_log.h"
+// #include "../../common/ophost/matmul_tiling/error_util.h"
 // #include "graph/utils/op_desc_utils.h"
 // #include "graph/utils/type_utils.h"
 #include "register/op_def_registry.h"
-#include "platform/platform_infos_def.h"
-#include "../../moe_distribute_combine/moe_distribute_combine_tiling.h"
-#include "../moe_distribute_combine_v2_tiling.h"
+// #include "platform/platform_infos_def.h"
+#include "experiment/platform/platform/platform_infos_def.h"
+#include "../op_kernel/moe_distribute_combine_tiling.h"
+#include "../op_kernel/moe_distribute_combine_v2_tiling.h"
 
 using namespace AscendC;
 using namespace ge;
@@ -374,48 +375,48 @@ static bool CheckTensorDataType(const gert::TilingContext *context, const char *
     OP_TILING_CHECK(expandXDesc == nullptr, OP_LOGE(nodeName, "expandxDesc is null."), return false);
     OP_TILING_CHECK((expandXDesc->GetDataType() != ge::DT_BF16) && (expandXDesc->GetDataType() != ge::DT_FLOAT16),
         OP_LOGE(nodeName, "expandX dataType is invalid, dataType should be bf16 or float16, but is %s",
-        ops::ToString(expandXDesc->GetDataType()).c_str()), return false);
+        std::to_string(expandXDesc->GetDataType()).c_str()), return false);
     auto expertIdsDesc = context->GetInputDesc(EXPERT_IDS_INDEX);
     OP_TILING_CHECK(expertIdsDesc == nullptr, OP_LOGE(nodeName, "expertIdsDesc is null."), return false);
     OP_TILING_CHECK((expertIdsDesc->GetDataType() != ge::DT_INT32), OP_LOGE(nodeName, "expertIds dataType is invalid, "
-        "dataType should be int32, but is %s", ops::ToString(expertIdsDesc->GetDataType()).c_str()), return false);
+        "dataType should be int32, but is %s", std::to_string(expertIdsDesc->GetDataType()).c_str()), return false);
     auto assistInfoDesc = context->GetInputDesc(ASSIST_INFO_INDEX);
     OP_TILING_CHECK(assistInfoDesc == nullptr, OP_LOGE(nodeName, "assistInfoDesc is null."), return false);
     OP_TILING_CHECK((assistInfoDesc->GetDataType() != ge::DT_INT32), OP_LOGE(nodeName, "assistInfoForCombine dataType is invalid,"
-        " dataType should be int32, but is %s", ops::ToString(assistInfoDesc->GetDataType()).c_str()), return false);
+        " dataType should be int32, but is %s", std::to_string(assistInfoDesc->GetDataType()).c_str()), return false);
     auto epSendCountsDesc = context->GetInputDesc(EP_SEND_COUNTS_INDEX);
     OP_TILING_CHECK(epSendCountsDesc == nullptr, OP_LOGE(nodeName, "epSendCountsDesc is null."), return false);
     OP_TILING_CHECK((epSendCountsDesc->GetDataType() != ge::DT_INT32),
         OP_LOGE(nodeName, "epSendCounts dataType is invalid, dataType should be int32, but is %s",
-        ops::ToString(epSendCountsDesc->GetDataType()).c_str()), return false);
+        std::to_string(epSendCountsDesc->GetDataType()).c_str()), return false);
     auto tpSendCountsDesc = context->GetOptionalInputDesc(TP_SEND_COUNTS_INDEX);
     OP_TILING_CHECK(tpSendCountsDesc == nullptr, OP_LOGE(nodeName, "tpSendCountsDesc is null."), return false);
     OP_TILING_CHECK((tpSendCountsDesc->GetDataType() != ge::DT_INT32),
         OP_LOGE(nodeName, "tpSendCounts dataType is invalid, dataType should be int32, but is %s",
-        ops::ToString(tpSendCountsDesc->GetDataType()).c_str()), return false);
+        std::to_string(tpSendCountsDesc->GetDataType()).c_str()), return false);
     if (isActiveMask) {
         auto xActiveMaskDesc = context->GetOptionalInputDesc(X_ACTIVE_MASK_INDEX);
         OP_TILING_CHECK(xActiveMaskDesc == nullptr, OP_LOGE(nodeName, "xActiveMaskDesc is null."), return false);
         OP_TILING_CHECK(xActiveMaskDesc->GetDataType() != ge::DT_BOOL, OP_LOGE(nodeName, "xActiveMask dataType is invalid,"
-            " dataType should be bool, but is %s.", ops::ToString(xActiveMaskDesc->GetDataType()).c_str()), return false);
+            " dataType should be bool, but is %s.", std::to_string(xActiveMaskDesc->GetDataType()).c_str()), return false);
     }
     auto sharedExpertXDesc = context->GetOptionalInputDesc(SHARED_EXPERT_X_INDEX);
     if (sharedExpertXDesc != nullptr) {
         OP_TILING_CHECK(sharedExpertXDesc->GetDataType() != expandXDesc->GetDataType(),
             OP_LOGE(nodeName, "sharedExpertX dataType should be the same as expandX dataType, but got sharedExpertX"
-            "dataType %s, expandX dataType %s.", ops::ToString(sharedExpertXDesc->GetDataType()).c_str(),
-            ops::ToString(expandXDesc->GetDataType()).c_str()), return false);
+            "dataType %s, expandX dataType %s.", std::to_string(sharedExpertXDesc->GetDataType()).c_str(),
+            std::to_string(expandXDesc->GetDataType()).c_str()), return false);
     }
     auto expertScalesDesc = context->GetInputDesc(EXPERT_SCALES_INDEX);
     OP_TILING_CHECK(expertScalesDesc == nullptr, OP_LOGE(nodeName, "expertScalesDesc is null."), return false);
     OP_TILING_CHECK((expertScalesDesc->GetDataType() != ge::DT_FLOAT),
         OP_LOGE(nodeName, "expertScales dataType is invalid, dataType should be float, but is %s",
-        ops::ToString(expertScalesDesc->GetDataType()).c_str()), return false);
+        std::to_string(expertScalesDesc->GetDataType()).c_str()), return false);
     auto xDesc = context->GetOutputDesc(OUTPUT_X_INDEX);
     OP_TILING_CHECK(xDesc == nullptr, OP_LOGE(nodeName, "xDesc is null."), return false);
     OP_TILING_CHECK((xDesc->GetDataType() != expandXDesc->GetDataType()), OP_LOGE(nodeName,
         "x dataType is invalid, dataType should be equal to expandX dataType %s, but is %s",
-        ops::ToString(expandXDesc->GetDataType()).c_str(), ops::ToString(xDesc->GetDataType()).c_str()),
+        std::to_string(expandXDesc->GetDataType()).c_str(), std::to_string(xDesc->GetDataType()).c_str()),
         return false);
     return true;
 }
@@ -780,7 +781,7 @@ static ge::graphStatus MoeDistributeCombineA3TilingFuncImpl(gert::TilingContext*
         OP_LOGE(nodeName, "param dim check failed."), return ge::GRAPH_FAILED);
 
     // 校验win区大小
-    uint64_t maxWindowSize = mc2tiling::Mc2TilingUtils::GetMaxWindowSize();
+    uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
     uint64_t h = static_cast<uint64_t>(tilingData->moeDistributeCombineV2Info.h);
     uint64_t epWorldSize = static_cast<uint64_t>(tilingData->moeDistributeCombineV2Info.epWorldSize);
     uint64_t k = static_cast<uint64_t>(tilingData->moeDistributeCombineV2Info.k);

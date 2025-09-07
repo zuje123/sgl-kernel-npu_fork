@@ -14,7 +14,6 @@
  */
 #include "moe_distribute_combine_v2.h"
 #include "kernel_operator.h"
-#include "lib/matmul_intf.h"
 #include "moe_distribute_combine_v2_tiling.h"
 
 using namespace AscendC;
