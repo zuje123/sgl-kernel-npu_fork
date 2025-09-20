@@ -141,6 +141,32 @@ function build_deepep_kernels()
     cd -
 }
 
+function build_deepep_kernels2()
+{
+    if [[ "$ONLY_BUILD_DEEPEP_ADAPTER_MODULE" == "ON" ]]; then return 0; fi
+    if [[ "$BUILD_DEEPEP_MODULE" != "ON" ]]; then return 0; fi
+
+    KERNEL_DIR="csrc/deepep/ops2"
+    CUSTOM_OPP_DIR="${CURRENT_DIR}/python/deep_ep/deep_ep"
+
+    cd "$KERNEL_DIR" || exit
+
+    chmod +x build.sh
+    chmod +x cmake/util/gen_ops_filter.sh
+    ./build.sh
+
+    custom_opp_file=$(find ./build_out -maxdepth 1 -type f -name "custom_opp*.run")
+    if [ -z "$custom_opp_file" ]; then
+        echo "can not find run package"
+        exit 1
+    else
+        echo "find run package: $custom_opp_file"
+        chmod +x "$custom_opp_file"
+    fi
+    #./build_out/custom_opp_*.run --install-path=$CUSTOM_OPP_DIR
+    cd -
+}
+
 function build_memory_saver()
 {
     if [[ "$BUILD_MEMORY_SAVER_MODULE" != "ON" ]]; then return 0; fi
@@ -184,6 +210,7 @@ function main()
 {
 
     build_kernels
+    build_deepep_kernels2
     build_deepep_kernels
     if pip3 show wheel;then
         echo "wheel has been installed"
