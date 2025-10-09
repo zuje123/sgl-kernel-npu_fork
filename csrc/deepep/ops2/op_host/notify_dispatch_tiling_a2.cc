@@ -60,6 +60,7 @@ constexpr uint32_t OUTPUT_SRC_OFFSET_RANK_TOKEN_INDEX = 6;
 constexpr uint32_t OUTPUT_DST_OFFSET_RANK_TOKEN_INDEX = 7;
 constexpr uint32_t OUTPUT_OFFSET_INNER_INDEX = 8;
 constexpr uint32_t OUTPUT_COUNT_OUTER_INDEX = 9;
+constexpr uint32_t OUTPUT_EXPAND_IDX_INDEX = 10;
 
 constexpr uint32_t ATTR_SEND_COUNT_INDEX = 0;
 constexpr uint32_t ATTR_NUM_TOKENS_INDEX = 1;
@@ -310,6 +311,16 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
         OP_LOGE(nodeName,
                 "countOuter datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
                 static_cast<ge::DataType>(countOuter->GetDataType())),
+        return false);
+    
+    auto expandIdx = context->GetOutputDesc(OUTPUT_EXPAND_IDX_INDEX);
+    OP_TILING_CHECK(expandIdx == nullptr, OP_LOGE(nodeName, "expandIdx is null."), return false);
+    OP_TILING_CHECK(
+        (expandIdx->GetDataType() != ge::DT_BF16) && (expandIdx->GetDataType() != ge::DT_FLOAT16) &&
+            (expandIdx->GetDataType() != ge::DT_FLOAT) && (expandIdx->GetDataType() != ge::DT_INT32),
+        OP_LOGE(nodeName,
+                "expandIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+                static_cast<ge::DataType>(expandIdx->GetDataType())),
         return false);
 
     // Verify the size of the win area

@@ -20,7 +20,7 @@ using namespace Moe;
         GM_ADDR tokenServerIdxOutput, GM_ADDR tokensUniquePerServerOutput,                      \
         GM_ADDR epRankTokenCntOutput, GM_ADDR localEpTokenCntOutput,                            \
         GM_ADDR srcOffsetRankTokenIdxOutput, GM_ADDR dstOffsetRankTokenIdxOutput,               \
-        GM_ADDR offsetInnerOutput, GM_ADDR countOuterOutput,                                    \
+        GM_ADDR offsetInnerOutput, GM_ADDR countOuterOutput, GM_ADDR expandIdxOutput,           \
         GM_ADDR workspace, GM_ADDR tiling
 
 #define KERNELS_ARGS_CALL_A2_ALL2ALL()                                                                      \
@@ -28,7 +28,7 @@ using namespace Moe;
     cycleCount, scale, scaleCount, offset, localRank, localRankSize, commArgs, \
     tokenServerIdxOutput, tokensUniquePerServerOutput, epRankTokenCntOutput, localEpTokenCntOutput, \
     srcOffsetRankTokenIdxOutput, dstOffsetRankTokenIdxOutput, offsetInnerOutput, countOuterOutput, \
-    workspace, tiling
+    expandIdxOutput, workspace, tiling
 
 #define printflag(ss)                                           \
     if (blockIdx < coreNumBetween) {                            \
@@ -120,6 +120,7 @@ public:
         dstOffsetRankTokenIdxOutputGT_.SetGlobalBuffer((__gm__ int32_t *)dstOffsetRankTokenIdxOutput);
         offsetInnerOutputGT_.SetGlobalBuffer((__gm__ int32_t *)offsetInnerOutput);
         countOuterOutputGT_.SetGlobalBuffer((__gm__ int32_t *)countOuterOutput);
+        expandIdxOutputGT_.SetGlobalBuffer((__gm__ int32_t *)expandIdxOutput);
 
         // 初始化RDMA相关变量
         // dataSpaceGT_ = workspace; // 需要预留大一些空间供存放交换后拆分出来的数据
@@ -643,6 +644,18 @@ private:
         }
     }
 
+    __aicore__ inline void BuildExpandIdxData()
+    {
+        // printflag("enter BuildExpandIdxData\n");
+        // 计算 expandIdxOutputGT_ , 对应于输入 tokenExpertIdx
+        // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen + tokenServerCntLen + tokenServerIdxLen
+        int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum;
+        CpGM2GMPingPong<int32_t>(tokenExpertIdxAlignLen, recvDataOutputGt[curRankDataOffset], expandIdxOutputGT_, COPYONLY);
+        SyncFunc<AscendC::HardEvent::MTE3_S>();
+        // PRINTF("[BuildExpandIdxData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
+        // AscendC::DumpTensor(expandIdxOutputGT_, 647, MAX_BS * topkNum);
+    }
+
     __aicore__ inline void BuildCountOuterData()
     {
         // printflag("enter BuildCountOuterData\n");
@@ -709,11 +722,15 @@ private:
         }
         SyncFunc<AscendC::HardEvent::MTE3_S>();
 
-        // 计算 localEpTokenCntOutputGT_
+        // 计算 localEpTokenCntOutputGT_ , shape[localExperts, rankSize]  value: sumCnt 前缀和
         int32_t localExpertNum = numExperts / rankSize;
+        int32_t preCnt = 0;
         for (int i = 0; i < localExpertNum; ++i) {
-            int cnt = epRankTokenCntOutputGT_.GetValue(rank * localExpertNum + i);
-            localEpTokenCntOutputGT_.SetValue(i, cnt);
+            for (int j = 0; j < rankSize; ++j) {
+                int cnt = epRankTokenCntOutputGT_.GetValue(rank * localExpertNum + i * rankSize + j);
+                preCnt += cnt;
+                localEpTokenCntOutputGT_.SetValue(i * rankSize + j, preCnt);
+            }
         }
         SyncFunc<AscendC::HardEvent::MTE3_S>();
 
@@ -864,6 +881,7 @@ private:
     GlobalTensor<int32_t> offsetInnerOutputGT_; // 以token-expert排布的dstoffset [globalBs, expertNum] -> value:dst_offset
     GlobalTensor<int32_t> countOuterOutputGT_; // 每个token发送到的server数量 [bs] -> value:server数量
     GlobalTensor<int32_t> offsetOuterOutputGT_; // 每个token在server上的位次    同tokenServerIdxOutputGT_
+    GlobalTensor<int32_t> expandIdxOutputGT_; // 给同一专家的token个数 [bs * topk], topk_idx的同专家前缀和
 
 };
 

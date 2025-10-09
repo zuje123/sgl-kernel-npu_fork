@@ -18,7 +18,7 @@ extern "C" __global__ __aicore__ void notify_dispatch_a2(GM_ADDR sendData, GM_AD
                                                       GM_ADDR tokenServerIdx, GM_ADDR tokensUniquePerServer,
                                                       GM_ADDR epRankTokenCnt, GM_ADDR localEpTokenCnt,
                                                       GM_ADDR srcOffsetRankTokenIdx, GM_ADDR dstOffsetRankTokenIdx,
-                                                      GM_ADDR offsetInner, GM_ADDR countOuter,
+                                                      GM_ADDR offsetInner, GM_ADDR countOuter, GM_ADDR expandIdx,
                                                       GM_ADDR workspace, GM_ADDR tiling)
 {
     REGISTER_TILING_DEFAULT(NotifyDispatchA2TilingData);
@@ -49,6 +49,7 @@ extern "C" __global__ __aicore__ void notify_dispatch_a2(GM_ADDR sendData, GM_AD
     GM_ADDR dstOffsetRankTokenIdxOutput = dstOffsetRankTokenIdx;
     GM_ADDR offsetInnerOutput = offsetInner;
     GM_ADDR countOuterOutput = countOuter;
+    GM_ADDR expandIdxOutput = expandIdx;
 
     // fill in unused args
     uint32_t extraFlag = 0;
