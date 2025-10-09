@@ -137,6 +137,7 @@ function build_deepep_kernels()
         echo "find run package: $custom_opp_file"
         chmod +x "$custom_opp_file"
     fi
+    rm -rf "$CUSTOM_OPP_DIR"/vendors
     ./build_out/custom_opp_*.run --install-path=$CUSTOM_OPP_DIR
     cd -
 }
@@ -163,7 +164,8 @@ function build_deepep_kernels2()
         echo "find run package: $custom_opp_file"
         chmod +x "$custom_opp_file"
     fi
-    #./build_out/custom_opp_*.run --install-path=$CUSTOM_OPP_DIR
+    rm -rf "$CUSTOM_OPP_DIR"/vendors
+    ./build_out/custom_opp_*.run --install-path=$CUSTOM_OPP_DIR
     cd -
 }
 
@@ -211,7 +213,7 @@ function main()
 
     build_kernels
     build_deepep_kernels2
-    build_deepep_kernels
+    # build_deepep_kernels
     if pip3 show wheel;then
         echo "wheel has been installed"
     else
