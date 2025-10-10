@@ -278,7 +278,13 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
     auto expandScales = at::zeros({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
     at::Tensor expert_ids = new_topk_idx.to(at::kInt);
 
-
+    at::Tensor dispatch_wait_recv_cost_stats_out;
+    EXEC_NPU_CMD(aclnnDispatchNormalA2, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
+                 token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx,
+                 hcom_ep_name, num_ranks, rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType,
+                 sharedExpertNum, sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out,
+                 dynamic_scales_out, expand_idx, expertTokenNums, epRecvCount, expandScales,
+                 dispatch_wait_recv_cost_stats_out);
 
     // EXEC_NPU_CMD(aclnnCamHCommMoeDistributeDispatch, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
     //              token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx, hcom_ep_name, num_ranks,
