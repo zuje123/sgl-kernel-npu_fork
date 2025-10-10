@@ -186,7 +186,7 @@ static ge::graphStatus SetWorkSpace(gert::TilingContext *context, const char *no
 
 static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeName)
 {
-    OP_LOGE(nodeName, "========CheckTensorDataType============");
+    OP_LOGD(nodeName, "========CheckTensorDataType============");
     auto sendData = context->GetInputDesc(INPUT_SEND_DATA_INDEX);
     OP_TILING_CHECK(sendData == nullptr, OP_LOGE(nodeName, "sendData is null."), return false);
     OP_TILING_CHECK(

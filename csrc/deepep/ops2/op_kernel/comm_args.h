@@ -1,6 +1,7 @@
 #ifndef COMM_ARGS_H
 #define COMM_ARGS_H
 #include <cstdint>
+#include <limits>
 
 #define FORCE_INLINE_AICORE __attribute__((always_inline)) inline __aicore__
 #include "kernel_operator.h"
@@ -39,6 +40,19 @@ constexpr static int64_t UB_SINGLE_TOTAL_SIZE_MAX = 192 * 1024;
 constexpr static int64_t START_OFFSET_FOR_SHARE = 512;
 
 enum Op : int { COPYONLY = -1, ADD = 0, MUL = 1, MAX = 2, MIN = 3 };
+
+template <typename T>
+constexpr T T_MAX = std::numeric_limits<T>::max();
+
+template <typename T>
+inline __aicore__ T CeilDiv(const T dividend, const T divisor)
+{
+    static_assert(std::is_arithmetic<T>::value, "T must be an arithmetic type");
+    if (divisor == 0 || dividend + divisor - 1 < dividend) {
+        return T_MAX<T>;
+    }
+    return (dividend + divisor - 1) / divisor;
+}
 
 struct CommArgs {
     int rank = 0;  // attr rank_id, global rank
