@@ -72,7 +72,7 @@ class NotifyDispatchA2 {
     constexpr static uint32_t EXP_TOKEN_COUNT_FLAG_CNT = UB_ALIGN / sizeof(int32_t);  // 8
     constexpr static uint32_t GM_ALIGN = 64;            // GM按64字节对齐
 
-    constexpr static uint32_t MAX_BS = 4096;            // 每卡支持的最大bs
+    constexpr static uint32_t MAX_BS = 16;            // 每卡支持的最大bs
 
 public:
     __aicore__ inline NotifyDispatchA2(int rank, int rankSize, uint32_t extraFlag)
@@ -94,7 +94,7 @@ public:
         // 初始化核分组, 需要外部调用保证所有的server的localRankSize均相同
         serverNum = CeilDiv(rankSize, localRankSize);
         serverId = rank / localRankSize;
-        //printf("rank:%d coreIdx:%d rankSize:%d localRankSize:%d serverNum:%d serverId:%d\n", rank, blockIdx, rankSize, localRankSize, serverNum, serverId);
+        // printf("rank:%d coreIdx:%d rankSize:%d localRankSize:%d serverNum:%d serverId:%d\n", rank, blockIdx, rankSize, localRankSize, serverNum, serverId);
         InitCoreGroup();
         // 初始化目标rank列表
         InitTargetRank();
@@ -263,7 +263,8 @@ private:
                 numTokensUniquePerServerAlignLen:%d, gNumTokensUniquePerServerAlignLen:%d, \
                 numTokensPerServerAlignLen:%d, gNumTokensPerServerAlignLen:%d, \
                 tokenServerCntAlignLen:%d, gTokenServerCntAlignLen:%d, \
-                tokenServerIdxAlignLen:%d, gTokenExpertIdxAlignLen:%d, \
+                tokenServerIdxAlignLen:%d, gTokenServerIdxAlignLen:%d, \
+                tokenExpertIdxAlignLen:%d, gTokenExpertIdxAlignLen:%d, \
                 expertMaxBsSrcOffsetAlignLen:%d, gExpertMaxBsSrcOffsetAlignLen:%d, \
                 expertMaxBsOriOffsetAlignLen:%d, gExpertMaxBsOriOffsetAlignLen:%d \n",
                 rank, blockIdx, len, numExperts, rankSize, serverNum, MAX_BS,
@@ -271,7 +272,8 @@ private:
                 numTokensUniquePerServerAlignLen, gNumTokensUniquePerServerAlignLen, 
                 numTokensPerServerAlignLen, gNumTokensPerServerAlignLen, 
                 tokenServerCntAlignLen, gTokenServerCntAlignLen, 
-                tokenServerIdxAlignLen, gTokenExpertIdxAlignLen, 
+                tokenServerIdxAlignLen, gTokenServerIdxAlignLen, 
+                tokenExpertIdxAlignLen, gTokenExpertIdxAlignLen, 
                 expertMaxBsSrcOffsetAlignLen, gExpertMaxBsSrcOffsetAlignLen,
                 expertMaxBsOriOffsetAlignLen, gExpertMaxBsOriOffsetAlignLen);
         }
@@ -653,7 +655,7 @@ private:
         CpGM2GMPingPong<int32_t>(tokenExpertIdxAlignLen, recvDataOutputGt[curRankDataOffset], expandIdxOutputGT_, COPYONLY);
         SyncFunc<AscendC::HardEvent::MTE3_S>();
         // PRINTF("[BuildExpandIdxData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(expandIdxOutputGT_, 647, MAX_BS * topkNum);
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 657, MAX_BS * topkNum);
     }
 
     __aicore__ inline void BuildCountOuterData()

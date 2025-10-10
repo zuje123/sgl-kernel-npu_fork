@@ -2,6 +2,10 @@
 #include <cmath>
 #include <pybind11/functional.h>
 
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
 #include "hccl/hccl.h"
 #include "exception.hpp"
 #include "deep_ep.hpp"
@@ -12,9 +16,9 @@ constexpr int PADDING_SIZE = 3;
 constexpr size_t HCOMM_NAME_LEN = 128;
 constexpr uint32_t NO_SCALES = 0;
 constexpr uint32_t DYNAMIC_SCALES = 2;
-constexpr uint32_t MAX_BS = 4096U;
+constexpr uint32_t MAX_BS = 16U;
 constexpr int A2_LOCAL_RANK_SIZE = 8;
-constexpr int A2_MAX_BATCH_SIZE = 4096;
+constexpr int A2_MAX_BATCH_SIZE = 16;
 constexpr int A2_EXPERT_DATA_SIZE = 1 + 2 * A2_MAX_BATCH_SIZE;  // 8193
 
 Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes, bool low_latency_mode,
@@ -48,6 +52,11 @@ Buffer::~Buffer() noexcept(false) {}
 bool Buffer::is_available() const
 {
     return available;
+}
+
+void log(const std::string& msg, int rank) { 
+    std::string file = "log_" + std::to_string(rank) + ".txt";
+    std::ofstream(file, std::ios_base::app) << msg << std::endl; 
 }
 
 std::tuple<torch::Tensor, std::optional<torch::Tensor>, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
@@ -98,8 +107,208 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     std::optional<EventHandle> output_event = std::nullopt;
     auto is_token_in_rank_bool = is_token_in_rank.to(at::kBool);
 
+    std::ostringstream oss;
+    oss << " \n layout send_data: \n" << total_data.cpu() << "\n";
+    log(oss.str(), rank);
+
     return std::make_tuple(num_tokens_per_rank, num_tokens_per_rdma_rank, num_tokens_per_expert, is_token_in_rank_bool,
                            output_event);
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor,
+            at::Tensor, at::Tensor, at::Tensor>
+Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
+                           const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
+                           const std::optional<at::Tensor>& num_tokens_per_rank, const at::Tensor& is_token_in_rank, const std::optional<at::Tensor>& num_tokens_per_expert,
+                           int cached_num_recv_tokens, const std::optional<at::Tensor>& cached_rank_prefix_matrix, const std::optional<at::Tensor>& cached_channel_prefix_matrix,
+                           int expert_alignment, int num_worst_tokens, const Config& config,
+                           std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream) {
+    // One channel use two blocks, even-numbered blocks for sending, odd-numbered blocks for receiving.
+    EP_HOST_ASSERT(config.num_sms % 2 == 0);
+    int num_channels = config.num_sms / 2;
+
+    at::Tensor new_x = x;
+    // for padding
+    if (topk_idx->size(0) < PADDING_SIZE) {
+        this->is_padding = true;
+        this->padding_cnt = PADDING_SIZE - topk_idx->size(0);
+        std::vector<at::Tensor> x_blocks;
+        if (topk_idx->size(0) != 0) {
+            x_blocks.emplace_back(x);
+        } else {
+            this->ori_x = x.clone();
+        }
+        for (int i = 0; i < this->padding_cnt; i++) {
+            at::Tensor tmp_x = torch::ones({1, x.size(1)}, x.options()) * (i + 1) * 2;
+            x_blocks.emplace_back(tmp_x);
+        }
+        new_x = torch::cat(x_blocks, 0);
+    }
+
+    EP_HOST_ASSERT(num_tokens_per_rank.has_value());
+    EP_HOST_ASSERT(num_tokens_per_expert.has_value());
+
+    // Type checks
+    EP_HOST_ASSERT(is_token_in_rank.scalar_type() == at::kBool);
+    EP_HOST_ASSERT(num_tokens_per_expert->scalar_type() == at::kInt);
+    EP_HOST_ASSERT(num_tokens_per_rank->scalar_type() == at::kInt);
+
+    // Shape and contiguous checks
+    EP_HOST_ASSERT(new_x.dim() == 2 and new_x.is_contiguous());
+    // EP_HOST_ASSERT((x.size(1) * x.element_size()) % sizeof(int4) == 0);
+    EP_HOST_ASSERT(is_token_in_rank.dim() == 2 and is_token_in_rank.is_contiguous());
+    EP_HOST_ASSERT(is_token_in_rank.size(0) == new_x.size(0) and is_token_in_rank.size(1) == num_ranks);
+    EP_HOST_ASSERT(num_tokens_per_expert->dim() == 1 and num_tokens_per_expert->is_contiguous());
+    EP_HOST_ASSERT(num_tokens_per_expert->size(0) % num_ranks == 0);
+    EP_HOST_ASSERT(num_tokens_per_rank->dim() == 1 and num_tokens_per_rank->is_contiguous());
+    EP_HOST_ASSERT(num_tokens_per_rank->size(0) == num_ranks);
+
+    auto num_tokens = static_cast<int>(new_x.size(0)), hidden = static_cast<int>(new_x.size(1));
+    auto num_experts = static_cast<int64_t>(num_tokens_per_expert->size(0));
+    auto num_local_experts = static_cast<int>(num_experts / num_ranks);
+
+    // Top-k checks
+    int num_topk = 0;
+    EP_HOST_ASSERT(topk_idx.has_value());
+    if (topk_idx.has_value()) {
+        num_topk = static_cast<int>(topk_idx->size(1));
+        EP_HOST_ASSERT(num_experts > 0);
+        EP_HOST_ASSERT(topk_idx->dim() == 2 and topk_idx->is_contiguous());
+        EP_HOST_ASSERT(topk_weights->dim() == 2 and topk_weights->is_contiguous());
+        EP_HOST_ASSERT(num_tokens == new_topk_idx.size(0));
+        EP_HOST_ASSERT(num_topk == topk_weights->size(1));
+        EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
+    }
+
+    // FP8 scales checks
+    float* x_scales_ptr = nullptr;
+    int num_scales = 0, scale_token_stride = 0, scale_hidden_stride = 0;
+    if (x_scales.has_value()) {
+        EP_HOST_ASSERT(new_x.element_size() == 1);
+        EP_HOST_ASSERT(x_scales->scalar_type() == at::kFloat or x_scales->scalar_type() == at::kInt);
+        EP_HOST_ASSERT(x_scales->dim() == 2);
+        EP_HOST_ASSERT(x_scales->size(0) == num_tokens);
+        num_scales = x_scales->dim() == 1 ? 1 : static_cast<int>(x_scales->size(1));
+        x_scales_ptr = static_cast<float*>(x_scales->data_ptr());
+        scale_token_stride = static_cast<int>(x_scales->stride(0));
+        scale_hidden_stride = static_cast<int>(x_scales->stride(1));
+    }
+
+    int send_per_group = 3; // (send_to_expert_num, send_to_expert_offset, send_rank_tokens)
+    int64_t local_rank_size = 8;
+    int32_t server_num = num_ranks / local_rank_size;
+
+    auto new_send_data = this->send_data;
+    int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + num_tokens * (1 + 2 * server_num + num_topk);
+
+    auto send_data_offset = at::zeros({num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor recv_data = at::zeros({send_count * num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor token_server_idx = at::zeros({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor token_unique_per_server = at::zeros({server_num}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor ep_rank_token_cnt = at::zeros({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor local_ep_token_cnt = at::zeros({num_local_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor src_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor dst_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor offset_inner = at::zeros({MAX_BS * num_ranks, num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor count_outer = at::zeros({MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    auto expand_idx = at::zeros({MAX_BS * num_topk}, at::dtype(at::kInt).device(x.device()));
+
+    // get ep name
+    char hcom_ep_name[HCOMM_NAME_LEN];
+    if (!moe_all_to_all_group_name.empty()) {
+        std::memcpy(hcom_ep_name, moe_all_to_all_group_name.data(), moe_all_to_all_group_name.size() + 1);
+    } else {
+        HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
+    }
+
+
+    int64_t local_rank_id = rank % local_rank_size;
+    auto new_num_tokens_per_expert = num_tokens_per_expert.value();
+
+    EXEC_NPU_CMD(aclnnNotifyDispatchA2,
+        new_send_data,
+        new_num_tokens_per_expert,
+        send_count,
+        num_tokens,
+        num_topk,
+        num_experts,
+        hcom_ep_name,       // commGroup
+        num_ranks,          // rankSize
+        rank,               // rankId
+        local_rank_size,
+        local_rank_id,
+        send_data_offset,
+        recv_data,
+        token_server_idx,
+        token_unique_per_server,
+        ep_rank_token_cnt,
+        local_ep_token_cnt,
+        src_offset_rank_token_idx,
+        dst_offset_rank_token_idx,
+        offset_inner,
+        count_outer,
+        expand_idx);
+    
+    int total_recv_tokens = 0;
+    auto ep_rank_token_cnt_cpu = ep_rank_token_cnt.to(at::kCPU);
+    auto ep_rank_token_cnt_ptr = ep_rank_token_cnt_cpu.data_ptr<int>();
+    for (int i = 0; i < num_experts * num_ranks; ++i) {
+        int cnt = ep_rank_token_cnt_ptr[i];
+        total_recv_tokens += cnt;
+    }
+    
+    at::Tensor xActiveMask = at::zeros({1}, at::dtype(at::kInt).device(x.device()));
+    int64_t tp_size = 1;
+    int64_t tp_rank = 0;
+    int64_t expertShardType = 0;
+    int64_t sharedExpertNum = 1;
+    int64_t sharedExpertRankNum = 0;
+    int64_t expertTokenNumsType = 0;
+    int64_t global_bs = static_cast<int64_t>(MAX_BS * num_ranks);
+
+    int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
+    bool use_quant = false;
+    int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
+    auto expandx_out = use_quant ? at::zeros({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
+                                 : at::zeros({num_recv_tokens, hidden}, x.options());
+    auto dynamic_scales_out = at::zeros({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
+    auto expertTokenNums = at::zeros({1}, at::dtype(at::kLong).device(x.device()));
+    auto epRecvCount = at::zeros({1}, at::dtype(at::kInt).device(x.device()));
+    auto tpRecvCount = at::zeros({1}, at::dtype(at::kInt).device(x.device()));
+    auto expandScales = at::zeros({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
+    at::Tensor expert_ids = new_topk_idx.to(at::kInt);
+
+
+
+    // EXEC_NPU_CMD(aclnnCamHCommMoeDistributeDispatch, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
+    //              token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx, hcom_ep_name, num_ranks,
+    //              rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType, sharedExpertNum,
+    //              sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out, dynamic_scales_out, expand_idx_out,
+    //              expertTokenNums, epRecvCount, tpRecvCount, expandScales);
+
+    // EXEC_NPU_CMD(aclnnCamHCommMoeDistributeDispatch, x, expert_ids, x_scales, xActiveMask, topk_weights, 
+    //              hcom_ep_name, num_ranks, rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType, sharedExpertNum,
+    //              sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out, dynamic_scales_out, expand_idx_out,
+    //              expertTokenNums, epRecvCount, tpRecvCount, expandScales);
+
+    // at::Tensor dispatch_wait_recv_cost_stats_out;
+    // EXEC_NPU_CMD(aclnnDispatchNormalA2, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
+    //              token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx, hcom_ep_name, num_ranks,
+    //              rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType, sharedExpertNum,
+    //              sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out, dynamic_scales_out, expand_idx_out, expertTokenNums, 
+    //              epRecvCount, expandScales, dispatch_wait_recv_cost_stats_out);
+
+    /* dispatch normal
+    */
+    // EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, token_server_idx,
+    // ep_rank_token_cnt, ep_rank_token_cnt, hcom_ep_name, num_ranks, rank, hcom_ep_name,
+    // tp_size, tp_rank, num_experts, quant_mode, global_bs, expandx_out, dynamic_scales_out, expand_idx_out,
+    // dispatch_wait_recv_cost_stats_out);
+
+    std::optional<EventHandle> event;
+
+    return {this->send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, 
+        src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out};
 }
 
 std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>,

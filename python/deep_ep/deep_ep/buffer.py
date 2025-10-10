@@ -217,6 +217,39 @@ class Buffer:
             num_max_dispatch_tokens_per_rank, hidden, num_experts
         )
 
+    def dispatch_a2(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
+                 handle: Optional[Tuple] = None,
+                 num_tokens_per_rank: Optional[torch.Tensor] = None, num_tokens_per_rdma_rank: Optional[torch.Tensor] = None,
+                 is_token_in_rank: Optional[torch.Tensor] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
+                 topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
+                 expert_alignment: int = 1, num_worst_tokens: int = 0,
+                 config: Optional[Config] = None,
+                 previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
+                 allocate_on_comm_stream: bool = False) -> \
+            Tuple[
+                torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+            ]:
+        # Default config
+        config = self.get_dispatch_config(self.group_size) if config is None else config
+
+        # Launch the kernel with cached or non-cached mode
+        if isinstance(x, tuple):
+            raise NotImplementedError("Not support fp8")
+        x_scales = None
+
+        if handle is not None:
+            raise NotImplementedError("Optional communication handle is not supported yet.")
+        else:
+            assert num_tokens_per_rank is not None and is_token_in_rank is not None and num_tokens_per_expert is not None
+            send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, \
+            src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out = \
+                self.runtime.intranode_dispatch_a2(x, x_scales, topk_idx, topk_weights,
+                                        num_tokens_per_rank, is_token_in_rank, num_tokens_per_expert, 0, None, None,
+                                        expert_alignment, num_worst_tokens, config,
+                                        getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream)
+            return send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, \
+                src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out
+
     # noinspection PyTypeChecker
     @log_parameters(["topk_idx"])
     def dispatch(
