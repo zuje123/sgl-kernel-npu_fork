@@ -22,6 +22,7 @@ constexpr uint32_t DISPATCH_TOKEN_UB_SIZE = 176 * 1024;
 constexpr uint32_t IPC_MAGIC_OFFSET = 2 * 1024 * 1024 - 64 * 32;
 constexpr uint32_t IPC_TOKEN_CNT_OFFSET = 2 * 1024 * 1024;
 constexpr uint32_t IPC_DATA_OFFSET = 4 * 1024 * 1024;
+constexpr uint32_t NOTIFY_OFFSET = 204 * 1024 * 1024;
 constexpr uint32_t IPC_BUFF_ALIGN = 512;
 constexpr uint32_t TOKEN_COUNT_SIZE = 32;
 constexpr uint32_t FLAG_U32_CNT = TOKEN_COUNT_SIZE / 4;
@@ -213,7 +214,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 
     winContext_ = (__gm__ HcclOpResParam *)contextGM0;
     rankId_ = tilingData.moeDistributeDispatchInfo.epRankId;
-    windowInGM_ = hccl_.GetWindowsInAddr(rankId_);
+    windowInGM_ = hccl_.GetWindowsInAddr(rankId_) + NOTIFY_OFFSET;
     windowOutGM_ = hccl_.GetWindowsOutAddr(rankId_);
     axisBS_ = tilingData.moeDistributeDispatchInfo.bs;
     globalBs_ = tilingData.moeDistributeDispatchInfo.globalBs;
@@ -256,9 +257,11 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     */
     for (int i = 0; i < SERVER_RANK_SIZE; i++) {
         shareAddrs[i] = (__gm__ uint8_t *)(reinterpret_cast<uint64_t>(
-            hccl_.GetWindowsInAddr(rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE + i) + shareMemOffset_));
+            hccl_.GetWindowsInAddr(rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE + i) + shareMemOffset_ +
+            NOTIFY_OFFSET));
         shareAddrWins[i] = (__gm__ uint8_t *)(reinterpret_cast<uint64_t>(
-            hccl_.GetWindowsInAddr(rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE + i) + halfWinSize_ * bufferId_));
+            hccl_.GetWindowsInAddr(rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE + i) + NOTIFY_OFFSET +
+            halfWinSize_ * bufferId_));
     }
 
     // struce相关信息初始化计算
@@ -621,15 +624,15 @@ CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::ConstructDataAn
         uint32_t sendIdx = dstserverInd - startServerId;
         uint32_t dstRankId = rankId_ % SERVER_RANK_SIZE + dstserverInd * SERVER_RANK_SIZE;  // 目标Rank
         PipeBarrier<PIPE_ALL>();
-        uint64_t dstDataRdmaAddr =
-            (uint64_t)(hccl_.GetWindowsInAddr(dstRankId) + halfWinSize_ * bufferId_ + curServerId * SERVER_SIZE_ON_WIN);
+        uint64_t dstDataRdmaAddr = (uint64_t)(hccl_.GetWindowsInAddr(dstRankId) + NOTIFY_OFFSET +
+                                              halfWinSize_ * bufferId_ + curServerId * SERVER_SIZE_ON_WIN);
         // src卡GetWindowsInAddr地址, 要发给serverIndex，即是本端的rdma地址
         uint64_t srcDataRdmaAddr =
             (uint64_t)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN);
         // 去往该Server的传输的数据量
         uint32_t validTokenCount = expertToServerIdxTensor_(dstserverInd);
         uint32_t validDataLength = TOKEN_COUNT_SIZE + validTokenCount * tokenStructLen_;
-        uint64_t winInAddr = (uint64_t)(hccl_.GetWindowsInAddr(rankId_));
+        uint64_t winInAddr = (uint64_t)(hccl_.GetWindowsInAddr(rankId_) + NOTIFY_OFFSET);
         uint64_t winOutAddr = (uint64_t)(hccl_.GetWindowsOutAddr(rankId_));
         PipeBarrier<PIPE_ALL>();
         batchWriteU64Tensor_(0) = srcDataRdmaAddr;  // 源地址
@@ -638,8 +641,8 @@ CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::ConstructDataAn
         batchWriteU32Tensor_(6) = HcclDataType::HCCL_DATA_TYPE_INT8;
         batchWriteU32Tensor_(7) = dstRankId;  // dst卡
 
-        uint64_t dstFlagRdmaAddr = (uint64_t)(hccl_.GetWindowsInAddr(dstRankId) + halfWinSize_ * bufferId_ + WIN_SIZE +
-                                              curServerId * STATE_OFFSET);
+        uint64_t dstFlagRdmaAddr = (uint64_t)(hccl_.GetWindowsInAddr(dstRankId) + NOTIFY_OFFSET +
+                                              halfWinSize_ * bufferId_ + WIN_SIZE + curServerId * STATE_OFFSET);
 
         // src卡，即是本端的rdma地址
         uint64_t srcFlagRdmaAddr = (uint64_t)(sendStatusTensor_.GetPhyAddr());
