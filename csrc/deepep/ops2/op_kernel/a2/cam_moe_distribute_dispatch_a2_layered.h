@@ -215,7 +215,6 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     rankId_ = tilingData.moeDistributeDispatchInfo.epRankId;
     windowInGM_ = hccl_.GetWindowsInAddr(rankId_);
     windowOutGM_ = hccl_.GetWindowsOutAddr(rankId_);
-    return;
     axisBS_ = tilingData.moeDistributeDispatchInfo.bs;
     globalBs_ = tilingData.moeDistributeDispatchInfo.globalBs;
     axisH_ = tilingData.moeDistributeDispatchInfo.h;
@@ -978,39 +977,50 @@ template <TemplateMC2TypeA2layeredClass>
 __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::Process()
 {
     if ASCEND_IS_AIV {  // 全aiv处理
-        PRINTF("[A2layer Process]\n");
-        // Input2Win();
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-        // WriteRdmaCntInfo();
-        // DispatchBetweenServer();
-        // WaitWindow();
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-
-        // // 最后serverNum个核不参与Win2Ipc，只进行reduceInfo计算
-        // if (aivId_ < aivNum_ - serverNum) {
-        //     // Win2Ipc();
-        // }
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-        // SetIpcFlag(IPC_FLAG_STEP_1);
-        // WaitIpcFlag(IPC_FLAG_STEP_1);
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-        // Ipc2Out();
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-
-        // if (aivId_ == 0) {
-        //     CleanUp();
-        // }
-        // PipeBarrier<PIPE_ALL>();
-        // SetIpcFlag(IPC_FLAG_STEP_2);  // 为何同步？
-        // WaitIpcFlag(IPC_FLAG_STEP_2);
-        // PipeBarrier<PIPE_ALL>();
-        // SyncAll<true>();
-        hccl_.Finalize();
+        PRINTF("[A2layer Process blockIdx %d]\n", aivId_);
+        /*Input2Win();
+        PRINTF("[A2layer Input2Win blockIdx %d]\n", aivId_);
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        PRINTF("[A2layer b4WriteRdmaCntInfo blockIdx %d]\n", aivId_);
+        WriteRdmaCntInfo();
+        PRINTF("[A2layer b4DispatchBetweenServer blockIdx %d]\n", aivId_);
+        DispatchBetweenServer();
+        PRINTF("[A2layer b4WaitWindow blockIdx %d]\n", aivId_);
+        WaitWindow();
+        PRINTF("[A2layer AfterWaitWindow blockIdx %d]\n", aivId_);
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        PRINTF("[A2layer Win2Ipc blockIdx %d]\n", aivId_);
+        // 最后serverNum个核不参与Win2Ipc，只进行reduceInfo计算
+        if (aivId_ < aivNum_ - serverNum) {
+            // Win2Ipc();
+        }
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        PRINTF("[A2layer b4SetIpcFlag blockIdx %d]\n", aivId_);
+        SetIpcFlag(IPC_FLAG_STEP_1);
+        PRINTF("[A2layer b4WaitIpcFlag blockIdx %d]\n", aivId_);
+        WaitIpcFlag(IPC_FLAG_STEP_1);
+        PRINTF("[A2layer AfterWaitIpcFlag blockIdx %d]\n", aivId_);
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        PRINTF("[A2layer b4Ipc2Out blockIdx %d]\n", aivId_);
+        Ipc2Out();
+        PRINTF("[A2layer AfterIpc2Out blockIdx %d]\n", aivId_);
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        PRINTF("[A2layer b4CleanUp blockIdx %d]\n", aivId_);
+        if (aivId_ == 0) {
+            CleanUp();
+        }
+        PRINTF("[A2layer AfterCleanUp blockIdx %d]\n", aivId_);
+        PipeBarrier<PIPE_ALL>();
+        SetIpcFlag(IPC_FLAG_STEP_2);  // 为何同步？
+        WaitIpcFlag(IPC_FLAG_STEP_2);
+        PipeBarrier<PIPE_ALL>();
+        SyncAll<true>();
+        */hccl_.Finalize();
     }
 }
 }  // namespace MoeDistributeDispatchA2Impl

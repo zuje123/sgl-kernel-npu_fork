@@ -1,5 +1,5 @@
-SKN_PWD="/home/z00799692/code/1010/sgl-kernel-npu_a2"
-RANK0_IP="61.47.2.182"
+SKN_PWD="/home/l00679719/sgl-kernel-npu"
+RANK0_IP="141.61.41.73"
 IP=$(hostname -I | awk '{print $1}')
 cd ${SKN_PWD}
 # if [ "$1" != "0" ]; then
@@ -12,7 +12,7 @@ cd ${SKN_PWD}
 # fi
 cd ./tests/python/deepep
 export WORLD_SIZE=2
-export HCCL_BUFFSIZE=1024
+export HCCL_BUFFSIZE=4096
 export HCCL_INTRA_PCIE_ENABLE=1
 export HCCL_INTRA_ROCE_ENABLE=0
 rm -rf ./logs

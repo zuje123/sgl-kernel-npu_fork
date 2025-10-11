@@ -216,7 +216,7 @@ if __name__ == '__main__':
                        help='Hidden dimension size (default: 7168)')
     parser.add_argument('--num-topk', type=int, default=8,
                        help='Number of top-k experts (default: 8)')
-    parser.add_argument('--num-experts', type=int, default=8,
+    parser.add_argument('--num-experts', type=int, default=16,
                        help='Number of experts (default: 256)')
     args = parser.parse_args()
 
