@@ -94,9 +94,23 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
 
     send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, \
         src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out = buffer.dispatch_a2(**dispatch_args)
+    torch.npu.synchronize()
     dist.barrier()
 
-    expandx_out = buffer.normal_dispatch_a2(**dispatch_args)
+    normal_dispatch_args = {
+        'x': x,
+        'token_server_idx': token_server_idx,
+        'token_unique_per_server': token_unique_per_server,
+        'ep_rank_token_cnt': ep_rank_token_cnt,
+        'src_offset_rank_token_idx': src_offset_rank_token_idx,
+        'dst_offset_rank_token_idx': dst_offset_rank_token_idx,
+        'expand_idx': expand_idx,
+        'num_tokens_per_expert': num_tokens_per_expert,
+        'topk_idx': topk_idx,
+        'topk_weights': topk_weights,
+        'config': config,
+    }
+    expandx_out = buffer.normal_dispatch_a2(**normal_dispatch_args)
     dist.barrier()
 
     torch.set_printoptions(threshold=float('inf'))

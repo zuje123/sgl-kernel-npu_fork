@@ -63,8 +63,11 @@ public:
 
     std::tuple<at::Tensor, std::optional<EventHandle>>
     intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
-                        const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
-                        const std::optional<at::Tensor>& num_tokens_per_expert);
+                           const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
+                           const std::optional<at::Tensor>& num_tokens_per_expert, const at::Tensor& token_server_idx, 
+                           const at::Tensor& token_unique_per_server, const at::Tensor& ep_rank_token_cnt,
+                           const at::Tensor& src_offset_rank_token_idx, const at::Tensor& dst_offset_rank_token_idx, 
+                           const at::Tensor& expand_idx);
 
     std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>,
                std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>

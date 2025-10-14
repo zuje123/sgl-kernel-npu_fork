@@ -331,7 +331,10 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
 std::tuple<at::Tensor, std::optional<EventHandle>>
 Buffer::intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
                            const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
-                           const std::optional<at::Tensor>& num_tokens_per_expert)
+                           const std::optional<at::Tensor>& num_tokens_per_expert, const at::Tensor& token_server_idx, 
+                           const at::Tensor& token_unique_per_server, const at::Tensor& ep_rank_token_cnt,
+                           const at::Tensor& src_offset_rank_token_idx, const at::Tensor& dst_offset_rank_token_idx, 
+                           const at::Tensor& expand_idx)
 {
     int total_recv_tokens = MAX_BS;
     auto num_experts = static_cast<int64_t>(num_tokens_per_expert->size(0));
@@ -369,19 +372,19 @@ Buffer::intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at
     auto expandScales = at::zeros({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
     at::Tensor expert_ids = new_topk_idx.to(at::kInt);
 
-    at::Tensor token_server_idx_2 = at::zeros({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor token_unique_per_server_2 = at::zeros({server_num}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor ep_rank_token_cnt_2 = at::zeros({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor src_offset_rank_token_idx_2 = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor dst_offset_rank_token_idx_2 = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    auto expand_idx_2 = at::zeros({MAX_BS * num_topk}, at::dtype(at::kInt).device(x.device()));
+    // at::Tensor token_server_idx_2 = at::zeros({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
+    // at::Tensor token_unique_per_server_2 = at::zeros({server_num}, at::dtype(at::kInt).device(x.device()));
+    // at::Tensor ep_rank_token_cnt_2 = at::zeros({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    // at::Tensor src_offset_rank_token_idx_2 = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    // at::Tensor dst_offset_rank_token_idx_2 = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    // auto expand_idx_2 = at::zeros({MAX_BS * num_topk}, at::dtype(at::kInt).device(x.device()));
     at::Tensor dispatch_wait_recv_cost_stats_out;
 
-    EXEC_NPU_CMD(aclnnDispatchNormalA2, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx_2,
-                 token_unique_per_server_2, ep_rank_token_cnt_2, src_offset_rank_token_idx_2, dst_offset_rank_token_idx_2,
+    EXEC_NPU_CMD(aclnnDispatchNormalA2, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
+                 token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx,
                  hcom_ep_name, num_ranks, rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType,
                  sharedExpertNum, sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out,
-                 dynamic_scales_out, expand_idx_2, expertTokenNums, epRecvCount, expandScales,
+                 dynamic_scales_out, expand_idx, expertTokenNums, epRecvCount, expandScales,
                  dispatch_wait_recv_cost_stats_out);
 
     std::optional<EventHandle> event;

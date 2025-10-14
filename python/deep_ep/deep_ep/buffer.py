@@ -251,14 +251,12 @@ class Buffer:
                 src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out
 
     def normal_dispatch_a2(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-                 handle: Optional[Tuple] = None,
-                 num_tokens_per_rank: Optional[torch.Tensor] = None, num_tokens_per_rdma_rank: Optional[torch.Tensor] = None,
-                 is_token_in_rank: Optional[torch.Tensor] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
+                 token_server_idx: torch.Tensor, token_unique_per_server: torch.Tensor,
+                 ep_rank_token_cnt: torch.Tensor, src_offset_rank_token_idx: torch.Tensor,
+                 dst_offset_rank_token_idx: torch.Tensor, expand_idx: torch.Tensor,
+                 handle: Optional[Tuple] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
                  topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
-                 expert_alignment: int = 1, num_worst_tokens: int = 0,
-                 config: Optional[Config] = None,
-                 previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
-                 allocate_on_comm_stream: bool = False) -> \
+                 config: Optional[Config] = None) -> \
             Tuple[
                 torch.Tensor
             ]:
@@ -273,9 +271,11 @@ class Buffer:
         if handle is not None:
             raise NotImplementedError("Optional communication handle is not supported yet.")
         else:
-            assert num_tokens_per_rank is not None and is_token_in_rank is not None and num_tokens_per_expert is not None
+            assert num_tokens_per_expert is not None
             expandx_out, event = \
-                self.runtime.intranode_normal_dispatch_a2(x, x_scales, topk_idx, topk_weights, num_tokens_per_expert)
+                self.runtime.intranode_normal_dispatch_a2(x, x_scales, topk_idx, topk_weights, num_tokens_per_expert,
+                    token_server_idx, token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx,
+                    dst_offset_rank_token_idx, expand_idx)
             return expandx_out
 
     # noinspection PyTypeChecker
