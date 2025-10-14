@@ -1023,7 +1023,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         PRINTF("[A2layer AfterIpc2Out blockIdx %d]\n", aivId_);
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
-        /*
+        
         PRINTF("[A2layer b4CleanUp blockIdx %d]\n", aivId_);
         if (aivId_ == 0) {
             CleanUp();
@@ -1034,7 +1034,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         WaitIpcFlag(IPC_FLAG_STEP_2);
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
-        */
+        
         hccl_.Finalize();
     }
 }
