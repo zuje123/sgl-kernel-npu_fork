@@ -216,6 +216,8 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     rankId_ = tilingData.moeDistributeDispatchInfo.epRankId;
     windowInGM_ = hccl_.GetWindowsInAddr(rankId_) + NOTIFY_OFFSET;
     windowOutGM_ = hccl_.GetWindowsOutAddr(rankId_);
+    // return;
+
     axisBS_ = tilingData.moeDistributeDispatchInfo.bs;
     globalBs_ = tilingData.moeDistributeDispatchInfo.globalBs;
     axisH_ = tilingData.moeDistributeDispatchInfo.h;
@@ -981,7 +983,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 {
     if ASCEND_IS_AIV {  // 全aiv处理
         PRINTF("[A2layer Process blockIdx %d]\n", aivId_);
-        /*Input2Win();
+        Input2Win();
         PRINTF("[A2layer Input2Win blockIdx %d]\n", aivId_);
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
@@ -1001,6 +1003,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         }
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
+        
         PRINTF("[A2layer b4SetIpcFlag blockIdx %d]\n", aivId_);
         SetIpcFlag(IPC_FLAG_STEP_1);
         PRINTF("[A2layer b4WaitIpcFlag blockIdx %d]\n", aivId_);
@@ -1013,6 +1016,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         PRINTF("[A2layer AfterIpc2Out blockIdx %d]\n", aivId_);
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
+        /*
         PRINTF("[A2layer b4CleanUp blockIdx %d]\n", aivId_);
         if (aivId_ == 0) {
             CleanUp();
@@ -1023,7 +1027,8 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         WaitIpcFlag(IPC_FLAG_STEP_2);
         PipeBarrier<PIPE_ALL>();
         SyncAll<true>();
-        */hccl_.Finalize();
+        */
+        hccl_.Finalize();
     }
 }
 }  // namespace MoeDistributeDispatchA2Impl

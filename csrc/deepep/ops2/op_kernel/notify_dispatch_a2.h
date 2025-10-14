@@ -147,19 +147,20 @@ public:
             if (serverNum > 1) {
                 ProcessBetweenServer();
             }
+            printflag("beforeProcessWithinServer\n");
 
             // 第二阶段，处理server内通信
             ProcessWithinServer();
             SyncAll<true>();
 
-            // printflag("beforeSplitAndCalcData\n");
+            printflag("beforeSplitAndCalcData\n");
             // 交换后的数据拆分和计算输出
             SplitAndCalcData(); // TODO: 先验证recv_data
 
             hccl_.Finalize();
-            // printflag("AfterFinalize\n");
+            printflag("AfterFinalize\n");
         }
-        // PRINTF("[notify] rank:%d, block:%d \n", rank, blockIdx);
+        PRINTF("[notify] rank:%d, block:%d \n", rank, blockIdx);
     }
 
 private:
