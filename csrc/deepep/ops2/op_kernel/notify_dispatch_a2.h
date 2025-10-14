@@ -622,6 +622,10 @@ private:
             // printflag("before BuildEpRankTokenCntAndSrcDstData\n");
             BuildEpRankTokenCntAndSrcDstData();
         }
+        if (blockIdx == 4) {
+            // printflag("before BuildExpandIdxData\n");
+            BuildExpandIdxData();
+        }
     }
 
     __aicore__ inline void BuildTokenSeverIdxData()
@@ -754,7 +758,7 @@ private:
         */
         int32_t dstOffsetStart = 0;
         for (int expId = 0; expId < numExperts; ++expId) {
-            if (expId % localRankSize == 0) {
+            if (expId % localExpertNum == 0) {
                 dstOffsetStart = 0; // 每次所属rank递增后，计算desOffset的起始位置需要重置为0
             }
             for (int srcRank = 0; srcRank < rankSize; ++srcRank) {

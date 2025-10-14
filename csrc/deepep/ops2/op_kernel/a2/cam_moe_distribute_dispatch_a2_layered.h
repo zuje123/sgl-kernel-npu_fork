@@ -35,7 +35,7 @@ constexpr uint32_t EXTRA_TOKEN_INFO_NUM = 4U;  // 专家信息 权重信息 量�
 constexpr uint32_t BITS32_PER_BLOCK = 8U;
 constexpr static uint32_t BW_ITEM_SIZE = 32;
 constexpr uint32_t FLAG_VALUE = 0xFFFFFFFF;
-constexpr uint32_t BS_UPPER = 4096;
+constexpr uint32_t BS_UPPER = 16;
 
 #define TemplateMC2TypeA2layeredClass \
     typename XType, typename ExpandXOutType, bool StaticQuant, bool DynamicQuant, bool IsSmoothScaleExist
@@ -939,6 +939,13 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 
                 uint32_t tokenOffset =
                     (tokenStructLen_ * srcOffset);  // 包含token, 以及token后的信息:expIds, weights, tokenIdx, scales
+                
+                PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
+                    localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
+                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d\n", 
+                    rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
+                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset);
+
                 DataCopyPad(localUB, srcIpcGt[tokenOffset], copyParams, padParams);  // winIn --> local
                 SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
                 LocalTensor<ExpandXOutType> tokenLt = localUB.ReinterpretCast<ExpandXOutType>();
