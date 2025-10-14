@@ -61,6 +61,11 @@ public:
                         int expert_alignment, int num_worst_tokens, const Config& config,
                         std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream);
 
+    std::tuple<at::Tensor, std::optional<EventHandle>>
+    intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
+                        const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
+                        const std::optional<at::Tensor>& num_tokens_per_expert);
+
     std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>,
                std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
     intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> &x_scales,
