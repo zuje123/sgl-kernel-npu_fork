@@ -952,9 +952,18 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 DataCopyExtParams tokenParams{1, static_cast<uint32_t>(tokenLenInStruct_), 0, 0, 0};
                 DataCopyPad(expandXOutGMTensor_[dstOffset], tokenLt, tokenParams);  // local --> out
 
+                LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
+                int index;
+                for (int i = 0; i < axisK_; i++) {
+                    PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(i));
+
+                    if (expLt.GetValue(i) == recvExpId) {
+                        index = i;
+                    }
+                }
                 // weight to output
                 LocalTensor<float> weightLt = localUB[weightOffsetInStruct_].ReinterpretCast<float>();
-                DataCopyPad(weightsOutGt[dstOffset], weightLt, weightParams);  // local --> out
+                DataCopyPad(weightsOutGt[dstOffset], weightLt[i], weightParams);  // local --> out
 
                 // dynamic scales to output
                 if constexpr (DynamicQuant) {
