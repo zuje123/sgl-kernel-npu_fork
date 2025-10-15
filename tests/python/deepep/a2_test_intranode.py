@@ -110,7 +110,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         'topk_weights': topk_weights,
         'config': config,
     }
-    expandx_out = buffer.normal_dispatch_a2(**normal_dispatch_args)
+    expandx_out, dynamic_scales_out, expand_scales = buffer.normal_dispatch_a2(**normal_dispatch_args)
     dist.barrier()
 
     torch.set_printoptions(threshold=float('inf'))
@@ -133,7 +133,30 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         print(f'{offset_inner=}\n')
         print(f'{count_outer=}\n')
         print(f'{expand_idx=}\n')
-        # print(f'{expandx_out=}\n')
+        print(f'{expand_scales=}\n')
+
+    # Test combine
+    expert_idx = torch.zeros((num_tokens, num_experts), dtype=torch.int, device='npu')
+    handle = [
+        None,
+        None,
+        None,
+        expert_idx,
+        None,
+        num_tokens_per_expert,
+        offset_inner,
+        count_outer,
+        token_unique_per_server,
+        expand_scales,
+        topk_idx,
+        topk_weights
+    ]
+    combine_args = {'x': expandx_out, 'handle': handle, 'config': None, 'async_finish': False, 'topk_weights': topk_weights}
+    combined_x, combined_topk_weights, event = buffer.combine_a2(**combine_args)
+    dist.barrier()
+    print('combined_x', rank)
+    print('', flush=True)
+    time.sleep(1)
 
     # # Test dispatch
     # # noinspection PyShadowingNames

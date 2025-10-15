@@ -61,13 +61,19 @@ public:
                         int expert_alignment, int num_worst_tokens, const Config& config,
                         std::optional<EventHandle>& previous_event, bool async, bool allocate_on_comm_stream);
 
-    std::tuple<at::Tensor, std::optional<EventHandle>>
+    std::tuple<at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>
     intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at::Tensor>& x_scales,
                            const std::optional<at::Tensor>& topk_idx, const std::optional<at::Tensor>& topk_weights,
                            const std::optional<at::Tensor>& num_tokens_per_expert, const at::Tensor& token_server_idx, 
                            const at::Tensor& token_unique_per_server, const at::Tensor& ep_rank_token_cnt,
                            const at::Tensor& src_offset_rank_token_idx, const at::Tensor& dst_offset_rank_token_idx, 
                            const at::Tensor& expand_idx);
+
+    std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
+    intranode_combine_a2(const torch::Tensor &x, const torch::Tensor &topk_idx,
+                        const std::optional<torch::Tensor> &topk_weights, const torch::Tensor &src_idx,
+                        const torch::Tensor &send_head, const torch::Tensor &offsetInner, const torch::Tensor &offsetOuter,
+                        const torch::Tensor &countOuter, const torch::Tensor &expand_scales, const std::optional<at::Tensor> &combine_send_cost_stats);
 
     std::tuple<at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>, std::optional<at::Tensor>,
                std::vector<int>, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, std::optional<EventHandle>>

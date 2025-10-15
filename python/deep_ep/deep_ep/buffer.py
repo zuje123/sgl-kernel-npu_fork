@@ -258,7 +258,7 @@ class Buffer:
                  topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
                  config: Optional[Config] = None) -> \
             Tuple[
-                torch.Tensor
+                torch.Tensor, torch.Tensor, torch.Tensor
             ]:
         # Default config
         config = self.get_dispatch_config(self.group_size) if config is None else config
@@ -272,11 +272,11 @@ class Buffer:
             raise NotImplementedError("Optional communication handle is not supported yet.")
         else:
             assert num_tokens_per_expert is not None
-            expandx_out, event = \
+            expandx_out, dynamic_scales_out, expand_scales, event = \
                 self.runtime.intranode_normal_dispatch_a2(x, x_scales, topk_idx, topk_weights, num_tokens_per_expert,
                     token_server_idx, token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx,
                     dst_offset_rank_token_idx, expand_idx)
-            return expandx_out
+            return expandx_out, dynamic_scales_out, expand_scales
 
     # noinspection PyTypeChecker
     @log_parameters(["topk_idx"])
@@ -418,6 +418,41 @@ class Buffer:
             )
 
         # noinspection PyTypeChecker
+
+    def combine_a2(
+        self,
+        x: torch.Tensor,
+        handle: Tuple,
+        topk_weights: Optional[torch.Tensor] = None,
+        bias: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]] = None,
+        config: Optional[Config] = None,
+        previous_event: Optional[EventOverlap] = None,
+        async_finish: bool = False,
+        allocate_on_comm_stream: bool = False,
+        combine_send_cost_stats: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], EventOverlap]:
+        # NOTES: the second `_` is for the sending side, so we should use the third one
+        (
+            rank_prefix_matrix,
+            _,
+            channel_prefix_matrix,
+            src_idx,
+            is_recv_token_in_rank,
+            send_head,
+            offset_inner,
+            offset_outer,
+            count_outer,
+            expand_scales,
+            topk_idx,
+            topk_weights_ori,
+        ) = handle
+
+        # Launch the kernel
+        recv_x, recv_topk_weights, event = self.runtime.intranode_combine_a2(
+            x, topk_idx, topk_weights_ori, src_idx, send_head, 
+            offset_inner, offset_outer, count_outer, expand_scales, combine_send_cost_stats
+        )
+        return recv_x, recv_topk_weights, EventOverlap(event)
 
     @log_parameters()
     def combine(
