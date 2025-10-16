@@ -156,7 +156,9 @@ public:
             printflag("beforeSplitAndCalcData\n");
             // 交换后的数据拆分和计算输出
             SplitAndCalcData(); // TODO: 先验证recv_data
+            // SyncAll<true>();
 
+            printflag("beforeFinalize\n");
             hccl_.Finalize();
             printflag("AfterFinalize\n");
         }
@@ -695,7 +697,7 @@ private:
         int32_t curRankDataOffset = rank * len + numExperts; // offset + numTokensPerExpertLen
         DataCopyPad(tokensUniquePerServerLocal, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
         SyncFunc<AscendC::HardEvent::MTE3_S>();
-        // PRINTF("[BuildTokenUniquePerServerData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
+        PRINTF("[BuildTokenUniquePerServerData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
         // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 672, 32);
         // AscendC::DumpTensor(tokensUniquePerServerLocal, 679, serverNum);
         for (int i = 0; i < serverNum; ++i) {

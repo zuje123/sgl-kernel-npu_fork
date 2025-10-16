@@ -83,8 +83,9 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     # Random data
     x = torch.ones((num_tokens, hidden), dtype=torch.bfloat16, device='npu') * rank
     x_pure_rand = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device='npu')
-    topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu') * rank
+    topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu') * (rank + 1)
     topk_weights_pure_rand = torch.randn((num_tokens, num_topk), dtype=torch.float32, device='npu')
+    print(f'{rank=}, {topk_weights=}\n')
 
     if local_rank == 0:
         print(f'[testing] Running with {"FP8" if isinstance(x, tuple) else "BF16"}, with top-k ...', flush=True)
@@ -97,6 +98,52 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     torch.npu.synchronize()
     dist.barrier()
 
+    # dump tensor
+    # data = {
+    #     'send_data': send_data,
+    #     'recv_data': recv_data
+    # }
+    # torch.save(data, 'notify_data_rank_{rank}_tensors.pt')
+
+    param = {
+        'topk_idx': topk_idx,
+        'num_tokens_per_expert': num_tokens_per_expert,
+        'token_server_idx': token_server_idx,
+        'token_unique_per_server': token_unique_per_server,
+        'ep_rank_token_cnt': ep_rank_token_cnt,
+        'local_ep_token_cnt': local_ep_token_cnt,
+        'src_offset_rank_token_idx': src_offset_rank_token_idx,
+        'dst_offset_rank_token_idx': dst_offset_rank_token_idx,
+        'offset_inner': offset_inner,
+        'count_outer': count_outer,
+        'expand_idx': expand_idx,
+    }
+    torch.save(param, f"notify_param_rank_{rank}_tensors.pt")
+
+    torch.set_printoptions(threshold=float('inf'))
+    print(f'{rank=}, {topk_idx=}\n')
+    filename = f"send_data_{rank}.txt"
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(f'{rank=}, {send_data=}\n')
+    # print(f'{rank=}, {send_data=}\n')
+    if local_rank == 0:
+        filename2 = f"recv_data_{rank}.txt"
+        with open(filename2, 'w', encoding='utf-8') as f:
+            f.write(f'{rank=}, {recv_data=}\n')
+        # print(f'{recv_data=}\n')
+        print(f'{ep_rank_token_cnt=}\n')
+        print(f'{local_ep_token_cnt=}\n')
+        print(f'{src_offset_rank_token_idx=}\n')
+        print(f'{dst_offset_rank_token_idx=}\n')
+        print(f'{offset_inner=}\n')
+        print(f'{count_outer=}\n')
+        print(f'{expand_idx=}\n')
+        print(f'{topk_weights=}\n')
+    print(f'{rank=}, {token_server_idx=}\n')
+    print(f'{rank=}, {token_unique_per_server=}\n')
+    print(f'{rank=}, {num_tokens_per_expert=}\n')
+    
+    """
     normal_dispatch_args = {
         'x': x,
         'token_server_idx': token_server_idx,
@@ -124,8 +171,6 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         with open(filename2, 'w', encoding='utf-8') as f:
             f.write(f'{rank=}, {recv_data=}\n')
         # print(f'{recv_data=}\n')
-        print(f'{token_server_idx=}\n')
-        print(f'{token_unique_per_server=}\n')
         print(f'{ep_rank_token_cnt=}\n')
         print(f'{local_ep_token_cnt=}\n')
         print(f'{src_offset_rank_token_idx=}\n')
@@ -133,7 +178,11 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         print(f'{offset_inner=}\n')
         print(f'{count_outer=}\n')
         print(f'{expand_idx=}\n')
-        print(f'{expand_scales=}\n')
+        print(f'{topk_weights=}\n')
+    print(f'{rank=}, {token_server_idx=}\n')
+    print(f'{rank=}, {token_unique_per_server=}\n')
+    print(f'{rank=}, {expand_scales=}\n')
+    print(f'{rank=}, {num_tokens_per_expert=}\n')
 
     # Test combine
     expert_idx = torch.zeros((num_tokens, num_experts), dtype=torch.int, device='npu')
@@ -143,7 +192,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         None,
         expert_idx,
         None,
-        num_tokens_per_expert,
+        local_ep_token_cnt,
         offset_inner,
         count_outer,
         token_unique_per_server,
@@ -157,6 +206,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     print('combined_x', rank)
     print('', flush=True)
     time.sleep(1)
+    """
 
     # # Test dispatch
     # # noinspection PyShadowingNames

@@ -357,6 +357,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 template <TemplateMC2TypeA2layeredClass>
 __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFunc>::AlltoAllDispatch()
 {
+    PRINTF("enter AlltoAllDispatch \n");
     rowTmpFloatLocal_ = rowTmpFloatBuf_.Get<float>();
     ipcSliceSize = IPC_DATA_SIZE / worldSize_;
     ipcSliceNodeSize = ipcSliceSize * SERVER_RANK_SIZE;
@@ -364,6 +365,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     expandScalesLocal_ = scaleBuf_.Get<float>();
     DataCopy(sendCountLocal, sendCountGlobal_, RoundUp(moeExpertNum_, B32_PER_BLOCK));
     SyncFunc<AscendC::HardEvent::MTE2_S>();
+    AscendC::DumpTensor(sendCountLocal, 368, 32);
     for (uint32_t dstRankId = startRankId_; dstRankId < endRankId_; ++dstRankId) {
         // dstRankId 在本机上的同号卡
         uint32_t targetRank = dstRankId % SERVER_RANK_SIZE;
@@ -386,6 +388,8 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 
             uint32_t tokenNum = sendCountLocal.GetValue(expertId * worldSize_ + dstRankId) - preCount;
             uint32_t startTokenAddr = preCount * axisH_;
+            PRINTF("[AlltoAllDispatch] rank:%d, coreIdx_:%d, expertId:%d, dstRankId:%d, targetRank:%d, tokenNum:%d, preCount:%d\n",
+                rankId_, coreIdx_, expertId, dstRankId, targetRank, tokenNum, preCount);
             DataCopy(expandScalesLocal_, expandScalesGlobal_[preCount], (tokenNum + 31) / 32 * 32);
             SyncFunc<AscendC::HardEvent::MTE2_S>();
             for (uint32_t tokenId = 0U; tokenId < tokenNum; ++tokenId) {
