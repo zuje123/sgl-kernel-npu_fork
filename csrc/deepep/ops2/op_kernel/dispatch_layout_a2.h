@@ -41,7 +41,7 @@ public:
         numExperts_ = tilingData->dispatchLayoutInfo.numExperts;
         numTopk_ = tilingData->dispatchLayoutInfo.numTopk;
         localRankSize_ = tilingData->dispatchLayoutInfo.localRankSize;
-        serverNum_ = numRanks_ / localRankSize_;
+        serverNum_ = (numRanks_ + localRankSize_ - 1) / localRankSize_;
         tpipe_ = pipe;
 
         coreIdx_ = GetBlockIdx();
@@ -248,8 +248,8 @@ private:
                 int32_t server_id = (expert_id / experts_per_rank) / localRankSize_;
                 int32_t offset = localTokenServerOffsetTensor.GetValue(i * serverNum_ + server_id);
                 int32_t count = countExpertTensor.GetValue(expert_id);
-                expertRankTokenIdxTensor.SetValue(expert_id * TEMP_BATCH_SIZE + count, offset);
-                expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count, i);
+                expertRankTokenIdxTensor.SetValue(expert_id * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, offset);
+                expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, i);
                 sendTokenIdxGM_.SetValue(i * numTopk_ + j, count);
                 count++;
                 countExpertTensor.SetValue(expert_id, count);
@@ -266,6 +266,7 @@ private:
                     Duplicate(expertRankTokenIdxTensor[expert_id * TEMP_BATCH_SIZE], 0, TEMP_BATCH_SIZE);
                     Duplicate(expertRankTokenIdxTensor[(numExperts_ + expert_id) * TEMP_BATCH_SIZE], 0,
                               TEMP_BATCH_SIZE);
+                    SyncFunc<AscendC::HardEvent::V_S>();
                 }
             }
         }
