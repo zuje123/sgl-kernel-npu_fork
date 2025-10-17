@@ -22,7 +22,7 @@ constexpr uint32_t DISPATCH_TOKEN_UB_SIZE = 176 * 1024;
 constexpr uint32_t IPC_MAGIC_OFFSET = 2 * 1024 * 1024 - 64 * 32;
 constexpr uint32_t IPC_TOKEN_CNT_OFFSET = 2 * 1024 * 1024;
 constexpr uint32_t IPC_DATA_OFFSET = 4 * 1024 * 1024;
-constexpr uint32_t NOTIFY_OFFSET = 204 * 1024 * 1024;
+constexpr uint32_t NOTIFY_OFFSET = 0 * 1024 * 1024; // 204
 constexpr uint32_t IPC_BUFF_ALIGN = 512;
 constexpr uint32_t TOKEN_COUNT_SIZE = 32;
 constexpr uint32_t FLAG_U32_CNT = TOKEN_COUNT_SIZE / 4;
@@ -131,6 +131,7 @@ private:
     TBuf<> expertToServerCntsBuf_;  // 总表，int类型只写1/0
     TBuf<> expertToServerIdxBuf_;
     TBuf<QuePosition::VECCALC> tBuf;
+    TBuf<> weightBuf_;
 
     GM_ADDR expandXGM_;
     GM_ADDR expandIdxGM_;
@@ -293,7 +294,6 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 
     bufferChosenGlobal_.SetGlobalBuffer((__gm__ uint32_t *)(windowInGM_ + WIN_SIZE + worldSize_ * STATE_OFFSET));
     bufferId_ = bufferChosenGlobal_(0);
-    PRINTF("[Init] rank:%d, blockId:%d, bufferId:%d \n", rankId_, aivId_, bufferId_);
 
     windowInGM_ = windowInGM_ + halfWinSize_ * bufferId_;
     windowOutGM_ = windowOutGM_ + halfWinSize_ * bufferId_;
@@ -344,11 +344,11 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     batchWriteU64Tensor_ = batchWriteInfoBuf_.Get<uint64_t>();
     batchWriteU32Tensor_ = batchWriteU64Tensor_.template ReinterpretCast<uint32_t>();
 
-    tpipe_->InitBuffer(expertToServerCntsBuf_, RoundUp(static_cast<uint32_t>(axisBS_ * serverNum * sizeof(uint32_t)),
-                                                       UB_32B_ALIGN));  // bs * rankSize / 8 * 4
-    expertToServerCntTensor_ = expertToServerCntsBuf_.Get<uint32_t>();
-    Duplicate<uint32_t>(expertToServerCntTensor_, 0,
-                        static_cast<uint32_t>(RoundUp(static_cast<uint32_t>(axisBS_ * serverNum), B32_PER_BLOCK)));
+    // tpipe_->InitBuffer(expertToServerCntsBuf_, RoundUp(static_cast<uint32_t>(axisBS_ * serverNum * sizeof(uint32_t)),
+    //                                                    UB_32B_ALIGN));  // bs * rankSize / 8 * 4
+    // expertToServerCntTensor_ = expertToServerCntsBuf_.Get<uint32_t>();
+    // Duplicate<uint32_t>(expertToServerCntTensor_, 0,
+    //                     static_cast<uint32_t>(RoundUp(static_cast<uint32_t>(axisBS_ * serverNum), B32_PER_BLOCK)));
 
     tpipe_->InitBuffer(statusBuf_, UB_32B_ALIGN);  // 32
 
@@ -360,6 +360,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     Duplicate<int32_t>(expertCountTensor_, 0, moeExpertNum_);
 
     tpipe_->InitBuffer(tBuf, DISPATCH_TOKEN_UB_SIZE);  // 176K
+    tpipe_->InitBuffer(weightBuf_, UB_32B_ALIGN);  // 32
 
     GlobalTensor<int32_t> selfStatusTensor;
     selfStatusTensor.SetGlobalBuffer((__gm__ int32_t *)(statusSpaceGm_ + SELF_STATE_OFFSET));
@@ -474,8 +475,8 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 
         // LocalTensor<int> exd =tokenTempTensorU8_[expOffsetInStruct_].template ReinterpretCast<int>();
         // AscendC::DumpTensor(exd, 475, 32);
+        // PRINTF("[Input2Win] rank:%d, coreId:%d, weightGt:%d \n", rankId_, aivId_, weightGt[(startTokenId + i) * realLenInStruct_].GetValue(0));
         // 拷贝weight
-        PRINTF("[Input2Win] rank:%d, coreId:%d, weightGt:%d \n", rankId_, aivId_, weightGt[(startTokenId + i) * realLenInStruct_].GetValue(0));
         DataCopyPad(tokenTempTensorU8_[weightOffsetInStruct_], weightGt[(startTokenId + i) * realLenInStruct_],
                     weightCopyParams, weightPadParams);
 
@@ -492,13 +493,13 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
             //     j * SERVER_SIZE_ON_WIN + tokenStructLen_ * tokenServerIdxTensor_(i * serverNum + j);
             DataCopy(sendTokensU8Tensor_[destOffset], tokenTempTensorU8_[0], tokenStructLen_);
 
-            GlobalTensor<int32_t> sendTokenU32;
-            sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)(windowOutGM_));
-            AscendC::DumpTensor(sendTokenU32[(destOffset + expOffsetInStruct_) / 4], 495, 32);
+            // GlobalTensor<int32_t> sendTokenU32;
+            // sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)(windowOutGM_));
+            // AscendC::DumpTensor(sendTokenU32[(destOffset + expOffsetInStruct_) / 4], 495, 32);
 
-            GlobalTensor<float> sendTokenU32_wt;
-            sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)(windowOutGM_));
-            AscendC::DumpTensor(sendTokenU32_wt[(destOffset + weightOffsetInStruct_) / 4], 499, 32);
+            // GlobalTensor<float> sendTokenU32_wt;
+            // sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)(windowOutGM_));
+            // AscendC::DumpTensor(sendTokenU32_wt[(destOffset + weightOffsetInStruct_) / 4], 499, 32);
 
             if (j == rankId_ / SERVER_RANK_SIZE) {
                 DataCopy(readTokensU8Tensor_[destOffset], tokenTempTensorU8_[0], tokenStructLen_);
@@ -567,24 +568,24 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     }
 }
 
-template <TemplateMC2TypeA2layeredClass>
-__aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::CopyTokenToWinOut(
-    uint32_t localTokenIdx, uint32_t globalTokenIdx, uint32_t dstServerId)
-{
-    uint32_t curServerId = rankId_ / SERVER_RANK_SIZE;
-    uint32_t toServerCntSum = 0;
-    SyncFunc<AscendC::HardEvent::MTE2_S>();
+// template <TemplateMC2TypeA2layeredClass>
+// __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::CopyTokenToWinOut(
+//     uint32_t localTokenIdx, uint32_t globalTokenIdx, uint32_t dstServerId)
+// {
+//     uint32_t curServerId = rankId_ / SERVER_RANK_SIZE;
+//     uint32_t toServerCntSum = 0;
+//     SyncFunc<AscendC::HardEvent::MTE2_S>();
 
-    for (uint32_t tokenIdx = 0; tokenIdx < globalTokenIdx; tokenIdx++) {
-        uint32_t tensorOffset = tokenIdx * serverNum + dstServerId;
-        toServerCntSum += expertToServerCntTensor_(tensorOffset);
-    }
+//     for (uint32_t tokenIdx = 0; tokenIdx < globalTokenIdx; tokenIdx++) {
+//         uint32_t tensorOffset = tokenIdx * serverNum + dstServerId;
+//         toServerCntSum += expertToServerCntTensor_(tensorOffset);
+//     }
 
-    LocalTensor<uint8_t> tokenTempTensorU8_ = tBuf.GetWithOffset<uint8_t>((DISPATCH_TOKEN_UB_SIZE), TBUF_TEMP_OFFSET);
-    SyncFunc<AscendC::HardEvent::S_MTE3>();
-    uint32_t destOffset = dstServerId * SERVER_SIZE_ON_WIN + tokenStructLen_ * toServerCntSum + TOKEN_COUNT_SIZE;
-    DataCopy(sendTokensU8Tensor_[destOffset], tokenTempTensorU8_[localTokenIdx * tokenStructLen_], tokenStructLen_);
-}
+//     LocalTensor<uint8_t> tokenTempTensorU8_ = tBuf.GetWithOffset<uint8_t>((DISPATCH_TOKEN_UB_SIZE), TBUF_TEMP_OFFSET);
+//     SyncFunc<AscendC::HardEvent::S_MTE3>();
+//     uint32_t destOffset = dstServerId * SERVER_SIZE_ON_WIN + tokenStructLen_ * toServerCntSum + TOKEN_COUNT_SIZE;
+//     DataCopy(sendTokensU8Tensor_[destOffset], tokenTempTensorU8_[localTokenIdx * tokenStructLen_], tokenStructLen_);
+// }
 
 template <TemplateMC2TypeA2layeredClass>
 __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::WriteRdmaCntInfo()
@@ -652,15 +653,15 @@ CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::ConstructDataAn
         uint64_t srcDataRdmaAddr =
             (uint64_t)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN);
 
-        for (int j = 0; j < 16; ++j) {
-            GlobalTensor<int32_t> sendTokenU32;
-            sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN + TOKEN_COUNT_SIZE));
-            AscendC::DumpTensor(sendTokenU32[(expOffsetInStruct_) / 4], 658, 32);
+        // for (int j = 0; j < 16; ++j) {
+        //     GlobalTensor<int32_t> sendTokenU32;
+        //     sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN + TOKEN_COUNT_SIZE));
+        //     AscendC::DumpTensor(sendTokenU32[(expOffsetInStruct_) / 4], 658, 32);
 
-            GlobalTensor<float> sendTokenU32_wt;
-            sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN + TOKEN_COUNT_SIZE));
-            AscendC::DumpTensor(sendTokenU32_wt[(weightOffsetInStruct_) / 4], 662, 32);
-        }
+        //     GlobalTensor<float> sendTokenU32_wt;
+        //     sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ + dstserverInd * SERVER_SIZE_ON_WIN + TOKEN_COUNT_SIZE));
+        //     AscendC::DumpTensor(sendTokenU32_wt[(weightOffsetInStruct_) / 4], 662, 32);
+        // }
 
         // 去往该Server的传输的数据量
         uint32_t validTokenCount = expertToServerIdxTensor_(dstserverInd);
@@ -795,8 +796,8 @@ template <TemplateMC2TypeA2layeredClass>
 __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layeredFunc>::WaitWindow()
 {
     // 前ServerNum个卡进行等待，等待本server的也保留
-    if (aivId_ >= serverNum) {
-        return;
+    if (aivId_ >= serverNum || aivId_ == (rankId_ / SERVER_RANK_SIZE)) {
+        return; // 不等待本server
     }
     uint32_t waitFlagIdx = aivId_;
     PipeBarrier<PIPE_ALL>();
@@ -922,21 +923,23 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     uint32_t curRankExpertStart = rankId_ * localMoeExpertNum_;               // 9*8=72
     uint32_t curRankExpertEnd = curRankExpertStart + localMoeExpertNum_ - 1;  // 72+8-1=79
 
-    for (int i =0 ; i < serverNum; ++i) {
-        GlobalTensor<uint8_t> srcIpcU; 
-        srcIpcU.SetGlobalBuffer((__gm__ uint8_t *)(shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN);
+    // for (int i =0 ; i < serverNum; ++i) {
+    //     GlobalTensor<uint8_t> srcIpcU; 
+    //     srcIpcU.SetGlobalBuffer((__gm__ uint8_t *)(shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN);
         
-        for (int j = 0; j < 16; ++j) {
-            GlobalTensor<int32_t> sendTokenU32;
-            sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)((shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN + j * tokenStructLen_ + TOKEN_COUNT_SIZE));
-            AscendC::DumpTensor(sendTokenU32[(expOffsetInStruct_) / 4], 920, 32);
+    //     for (int j = 0; j < 16; ++j) {
+    //         GlobalTensor<int32_t> sendTokenU32;
+    //         sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)((shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN + j * tokenStructLen_ + TOKEN_COUNT_SIZE));
+    //         AscendC::DumpTensor(sendTokenU32[(expOffsetInStruct_) / 4], 920, 32);
 
-            GlobalTensor<float> sendTokenU32_wt;
-            sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)((shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN + j * tokenStructLen_ + TOKEN_COUNT_SIZE));
-            AscendC::DumpTensor(sendTokenU32_wt[(weightOffsetInStruct_) / 4], 924, 32);
-        }
-    }
+    //         GlobalTensor<float> sendTokenU32_wt;
+    //         sendTokenU32_wt.SetGlobalBuffer((__gm__ float *)((shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN + j * tokenStructLen_ + TOKEN_COUNT_SIZE));
+    //         AscendC::DumpTensor(sendTokenU32_wt[(weightOffsetInStruct_) / 4], 924, 32);
+    //     }
+    // }
+    // LocalTensor<float> weightLtV = tBuf.GetWithOffset<float>(2 * 1024 / sizeof(float), 2 * 1024);
 
+    LocalTensor<float> weightLtV = weightBuf_.Get<float>();
     for (uint32_t srcRank = 0; srcRank < worldSize_; ++srcRank) {
         uint32_t localRankIdx = srcRank % SERVER_RANK_SIZE;  // 20%8=4  server上的序号4rank，即第5个
         uint32_t curServerIdx = rankId_ / SERVER_RANK_SIZE;  // 9/8=1 server1,即第2个
@@ -1000,25 +1003,38 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
                 int index;
                 for (int j = 0; j < axisK_; j++) {
-                    PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
+                    // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
 
                     if (expLt.GetValue(j) == recvExpId) {
                         index = j;
                     }
                 }
+                AscendC::DumpTensor(expLt, 1012, 32);
                 // weight to output
                 LocalTensor<float> weightLt = localUB[weightOffsetInStruct_].ReinterpretCast<float>();
                 float weightVal = weightLt.GetValue(index);
+                AscendC::DumpTensor(weightLt, 1016, 32);
 
                 PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
                     localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
-                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f\n", 
+                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d\n", 
                     rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
-                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal);
+                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index);
 
+                // weightLt(0) = weightVal;
+                // AscendC::DumpTensor(weightsOutGt, 1019, 148);
+                SyncFunc<AscendC::HardEvent::MTE3_S>();
+                weightLtV(0) = weightLt.GetValue(index);
+                pipe_barrier(PIPE_ALL);
+                DataCopyPad(weightsOutGt[dstOffset], weightLtV, weightParams);
+                pipe_barrier(PIPE_ALL);
 
-                // weightsOutGt[dstOffset].SetValue(0, weightVal);
+                // weightsOutGt.SetValue(dstOffset, weightVal);
+                // __asm__ __volatile__("");
+                // AscendC::DataCacheCleanAndInvalid<float, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(weightsOutGt[dstOffset]);
+                // __asm__ __volatile__("");
                 // DataCopyPad(weightsOutGt[dstOffset], weightLt, weightParams);  // local --> out
+                // AscendC::DumpTensor(weightsOutGt, 1023, 148);
 
                 // dynamic scales to output
                 if constexpr (DynamicQuant) {
