@@ -608,6 +608,7 @@ private:
     {
         pipe.Reset();
         pipe.InitBuffer(tempBuf2_, 1000 * UB_ALIGN);
+
         if (blockIdx == 0) {
             // printflag("before BuildTokenUniquePerServerData\n");
             BuildTokenUniquePerServerData();
@@ -618,37 +619,44 @@ private:
             BuildTokenSeverIdxData();
             // printflag("after BuildTokenSeverIdxData\n");
         }
+        
         if (blockIdx == 2) {
             // printflag("before BuildCountOuterData\n");
             BuildCountOuterData();
             // printflag("after BuildCountOuterData\n");
         }
+
         if (blockIdx == 3) {
             // printflag("before BuildEpRankTokenCntAndSrcDstData\n");
             BuildEpRankTokenCntAndSrcDstData();
             // printflag("after BuildEpRankTokenCntAndSrcDstData\n");
         }
+
         if (blockIdx == 4) {
             // printflag("before BuildExpandIdxData\n");
             BuildExpandIdxData();
         }
+        
     }
 
     __aicore__ inline void BuildTokenSeverIdxData()
     {
         // printflag("enter BuildTokenSeverIdxData\n");
         // 计算 tokenServerIdxOutputGT_
-        GlobalTensor<int32_t> tokenServerIdxGT_;
-        tokenServerIdxGT_.SetGlobalBuffer((__gm__ int32_t *)(sendDataInput), (tokenServerIdxAlignLen) / sizeof(int32_t)); // sendDataInput地址用作临时存数
-
          // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen + tokenServerCntLen
         int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS;
-        CpGM2GMPingPong<int32_t>(tokenServerIdxAlignLen, recvDataOutputGt[curRankDataOffset], tokenServerIdxGT_, COPYONLY);
-        SyncFunc<AscendC::HardEvent::MTE3_S>();
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 648, MAX_BS * serverNum);
+        // AscendC::DumpTensor(tmpGT_, 652, MAX_BS * serverNum);
+        // CpGM2GMPingPong<int32_t>(tokenServerIdxAlignLen, recvDataOutputGt[curRankDataOffset], tmpGT_, COPYONLY);
+        // SyncFunc<AscendC::HardEvent::MTE3_S>();
         // PRINTF("[BuildTokenSeverIdxData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(tokenServerIdxGT_, 639, MAX_BS * serverNum);
+        // AscendC::DumpTensor(tmpGT_, 656, MAX_BS * serverNum);
         for (int i = 0; i < MAX_BS * serverNum; ++i) {
-            int32_t val = tokenServerIdxGT_.GetValue(i); // -1表示没有，0-N表示序号
+            int32_t val = recvDataOutputGt[curRankDataOffset].GetValue(i); // -1表示没有，0-N表示序号
+            // PRINTF("[BuildTokenSeverIdxData] rank:%d, blockIdx:%d, val:%d\n", rank, blockIdx, val);
+            __asm__ __volatile__("");
+            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokenServerIdxOutputGT_[i]);
+            __asm__ __volatile__("");
             if (val >= 0) {
                 tokenServerIdxOutputGT_.SetValue(i, val);
             } else {
@@ -658,6 +666,8 @@ private:
             AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokenServerIdxOutputGT_[i]);
             __asm__ __volatile__("");
         }
+        PipeBarrier<PIPE_ALL>();
+        // SyncFunc<AscendC::HardEvent::S_MTE3>();
     }
 
     __aicore__ inline void BuildExpandIdxData()
@@ -676,25 +686,26 @@ private:
     {
         // printflag("enter BuildCountOuterData\n");
         // 计算 countOuterOutputGT_
-        GlobalTensor<int32_t> tokensServerCntGT_;
-        tokensServerCntGT_.SetGlobalBuffer((__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen) / sizeof(int32_t)), 
-            tokenServerCntAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
-
         // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen
         int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum;
         // DataCopyPad(tokensServerCntLocal, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
-        CpGM2GMPingPong<int32_t>(tokenServerCntAlignLen, recvDataOutputGt[curRankDataOffset], tokensServerCntGT_, COPYONLY);
-        SyncFunc<AscendC::HardEvent::MTE3_S>();
+        // CpGM2GMPingPong<int32_t>(tokenServerCntAlignLen, recvDataOutputGt[curRankDataOffset], tokensServerCntGT_, COPYONLY);
+        // SyncFunc<AscendC::HardEvent::MTE3_S>();
         // PRINTF("[BuildCountOuterData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 657, MAX_BS);
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 717, MAX_BS);
         // AscendC::DumpTensor(tokensServerCntGT_, 660, MAX_BS);
         for (int i = 0; i < MAX_BS; ++i) {
-            int32_t val = tokensServerCntGT_.GetValue(i);
+            int32_t val = recvDataOutputGt[curRankDataOffset].GetValue(i);
+            // PRINTF("[BuildCountOuterData] rank:%d, blockIdx:%d, val:%d\n", rank, blockIdx, val);
+            __asm__ __volatile__("");
+            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(countOuterOutputGT_[i]);
+            __asm__ __volatile__("");
             countOuterOutputGT_.SetValue(i, val);
             __asm__ __volatile__("");
             AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(countOuterOutputGT_[i]);
             __asm__ __volatile__("");
         }
+        PipeBarrier<PIPE_ALL>();
     }
 
     __aicore__ inline void BuildTokenUniquePerServerData()
@@ -707,12 +718,16 @@ private:
 
         int32_t curRankDataOffset = rank * len + numExperts; // offset + numTokensPerExpertLen
         DataCopyPad(tokensUniquePerServerLocal, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
+        pipe_barrier(PIPE_ALL);
         SyncFunc<AscendC::HardEvent::MTE3_S>();
-        PRINTF("[BuildTokenUniquePerServerData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
+        // PRINTF("[BuildTokenUniquePerServerData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
         // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 672, 32);
         // AscendC::DumpTensor(tokensUniquePerServerLocal, 679, serverNum);
         for (int i = 0; i < serverNum; ++i) {
             int32_t val = tokensUniquePerServerLocal.GetValue(i);
+            __asm__ __volatile__("");
+            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokensUniquePerServerOutputGT_[i]);
+            __asm__ __volatile__("");
             tokensUniquePerServerOutputGT_.SetValue(i, val);
             __asm__ __volatile__("");
             AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokensUniquePerServerOutputGT_[i]);
@@ -723,28 +738,30 @@ private:
     __aicore__ inline void BuildEpRankTokenCntAndSrcDstData()
     {
         printflag("enter BuildEpRankTokenCntAndSrcDstData\n");
-        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
-        DataCopyExtParams copyParam{1, static_cast<uint32_t>(sizeof(int32_t)), 0, 0, 0};
         // 计算 epRankTokenCntOutputGT_
         GlobalTensor<int32_t> gEpRankTokenCntGT_;
         gEpRankTokenCntGT_.SetGlobalBuffer(
-            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen) / sizeof(int32_t)),
+            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen)),
             gNumTokensPerExpertAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
 
         for (int i = 0; i < rankSize; ++i) {
             int32_t dataOffset = i * len;
             // PRINTF("[BuildEpRankTokenCntAndSrcDstData1] rank:%d, blockIdx:%d, dataOffset:%d\n", rank, blockIdx, dataOffset);
+            // AscendC::DumpTensor(recvDataOutputGt[dataOffset], 765, 16);
             CpGM2GMPingPong<int32_t>(numTokensPerExpertAlignLen, recvDataOutputGt[dataOffset], gEpRankTokenCntGT_[i * numExperts], COPYONLY);
             SyncFunc<AscendC::HardEvent::MTE3_S>();
-            AscendC::DumpTensor(gEpRankTokenCntGT_[i * numExperts], 728, 32);
+            // AscendC::DumpTensor(gEpRankTokenCntGT_[i * numExperts], 768, 16);
         }
-
+        
         // shape[rankSize, numExperts] --> shape[numExperts, rankSize]  value: cnt
         for (int srcRank = 0; srcRank < rankSize; ++srcRank) {
             for (int curExp = 0; curExp < numExperts; ++curExp) {
                 int cnt = gEpRankTokenCntGT_.GetValue(srcRank * numExperts + curExp);
                 // PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, srcRank:%d, curExp:%d, cnt:%d \n",
                 //     rank, blockIdx, srcRank, curExp, cnt);
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[curExp * rankSize + srcRank]);
+                __asm__ __volatile__("");
                 epRankTokenCntOutputGT_.SetValue(curExp * rankSize + srcRank, cnt);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[curExp * rankSize + srcRank]);
@@ -752,7 +769,6 @@ private:
             }
         }
         SyncFunc<AscendC::HardEvent::MTE3_S>();
-
         
         
         // 计算 localEpTokenCntOutputGT_ , shape[localExperts, rankSize]  value: sumCnt 前缀和
@@ -762,6 +778,10 @@ private:
             for (int j = 0; j < rankSize; ++j) {
                 int cnt = epRankTokenCntOutputGT_.GetValue(rank * localExpertNum + i * rankSize + j);
                 preCnt += cnt;
+
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(localEpTokenCntOutputGT_[i * rankSize + j]);
+                __asm__ __volatile__("");
                 localEpTokenCntOutputGT_.SetValue(i * rankSize + j, preCnt);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(localEpTokenCntOutputGT_[i * rankSize + j]);
@@ -770,15 +790,18 @@ private:
         }
         SyncFunc<AscendC::HardEvent::MTE3_S>();
 
+        
         GlobalTensor<int32_t> gExpertMaxBsSrcGT_;
         gExpertMaxBsSrcGT_.SetGlobalBuffer(
             (__gm__ int32_t *)(sendDataInput + tokenServerIdxAlignLen + tokenServerCntAlignLen + gNumTokensPerExpertAlignLen),
-            gExpertMaxBsSrcOffsetAlignLen); // sendDataInput地址用作临时存数
+            gExpertMaxBsSrcOffsetAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
         for (int i = 0; i < rankSize; ++i) {
             int32_t dataOffset = i * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum + MAX_BS * topkNum;
             // PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, dataOffset:%d\n", rank, blockIdx, dataOffset);
+            // AscendC::DumpTensor(recvDataOutputGt[dataOffset], 816, 32);
             CpGM2GMPingPong<int32_t>(expertMaxBsSrcOffsetAlignLen, recvDataOutputGt[dataOffset], gExpertMaxBsSrcGT_[i * numExperts * MAX_BS], COPYONLY);
             SyncFunc<AscendC::HardEvent::MTE3_S>();
+            // AscendC::DumpTensor(gExpertMaxBsSrcGT_[i * numExperts * MAX_BS], 819, 32);
         }
 
         /** 计算 srcOffsetRankTokenIdxOutputGT_ / dstOffsetRankTokenIdxOutputGT_ / offsetInnerOutputGT_

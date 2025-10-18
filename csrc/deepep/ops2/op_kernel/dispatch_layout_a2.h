@@ -250,7 +250,15 @@ private:
                 int32_t count = countExpertTensor.GetValue(expert_id);
                 expertRankTokenIdxTensor.SetValue(expert_id * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, offset);
                 expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, i);
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
+                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numTopk_ + j]);
+                __asm__ __volatile__("");
                 sendTokenIdxGM_.SetValue(i * numTopk_ + j, count);
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
+                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numTopk_ + j]);
+                __asm__ __volatile__("");
                 count++;
                 countExpertTensor.SetValue(expert_id, count);
                 if (count % TEMP_BATCH_SIZE == 0) {

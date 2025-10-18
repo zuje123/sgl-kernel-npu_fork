@@ -937,7 +937,6 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     //         AscendC::DumpTensor(sendTokenU32_wt[(weightOffsetInStruct_) / 4], 924, 32);
     //     }
     // }
-    // LocalTensor<float> weightLtV = tBuf.GetWithOffset<float>(2 * 1024 / sizeof(float), 2 * 1024);
 
     LocalTensor<float> weightLtV = weightBuf_.Get<float>();
     for (uint32_t srcRank = 0; srcRank < worldSize_; ++srcRank) {
@@ -1001,7 +1000,8 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 DataCopyPad(expandXOutGMTensor_[dstOffset], tokenLt, tokenParams);  // local --> out
 
                 LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
-                int index;
+                pipe_barrier(PIPE_ALL);
+                int index = 100;
                 for (int j = 0; j < axisK_; j++) {
                     // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
 
@@ -1009,17 +1009,21 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                         index = j;
                     }
                 }
-                AscendC::DumpTensor(expLt, 1012, 32);
+                // if (index == 100) {
+                //     AscendC::DumpTensor(expLt, 1012, 32);
+                // }
                 // weight to output
                 LocalTensor<float> weightLt = localUB[weightOffsetInStruct_].ReinterpretCast<float>();
                 float weightVal = weightLt.GetValue(index);
-                AscendC::DumpTensor(weightLt, 1016, 32);
+                // if (index == 100) {
+                //     AscendC::DumpTensor(weightLt, 1016, 32);
+                // }
 
-                PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
-                    localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
-                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d\n", 
-                    rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
-                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index);
+                // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
+                //     localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
+                //     i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d\n", 
+                //     rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
+                //     tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index);
 
                 // weightLt(0) = weightVal;
                 // AscendC::DumpTensor(weightsOutGt, 1019, 148);
