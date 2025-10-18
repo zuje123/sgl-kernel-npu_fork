@@ -1000,7 +1000,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 DataCopyPad(expandXOutGMTensor_[dstOffset], tokenLt, tokenParams);  // local --> out
 
                 LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
-                pipe_barrier(PIPE_ALL);
+                SyncFunc<AscendC::HardEvent::MTE2_S>();
                 int index = 100;
                 for (int j = 0; j < axisK_; j++) {
                     // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
