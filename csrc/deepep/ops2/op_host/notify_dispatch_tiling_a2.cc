@@ -77,7 +77,7 @@ const int64_t MAX_COMM_WORLD_SIZE = 384;
 
 constexpr uint32_t SYSTEM_NEED_WORKSPACE = 16 * 1024 * 1024;
 constexpr uint32_t KERNEL_USE_WORKSPACE = 1 * 1024 * 1024;
-constexpr uint32_t KERNEL_A2_ARG_SIZE = 1 * 1024 * 1024;
+constexpr uint32_t KERNEL_A2_ARG_SIZE = 16 * 1024 * 1024;
 constexpr int32_t HCCL_BUFFER_SIZE_DEFAULT = 200 * 1024 * 1024;  // Bytes
 constexpr uint64_t MB_SIZE = 1024UL * 1024UL;
 

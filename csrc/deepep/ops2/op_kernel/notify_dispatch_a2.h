@@ -126,8 +126,8 @@ public:
         // dataSpaceGT_ = workspace; // 需要预留大一些空间供存放交换后拆分出来的数据
         windowInGM_ = this->shareAddrs[rank];
         windowOutGM_ = hccl_.GetWindowsOutAddr(rank) + (magic % PING_PONG_SIZE) * IPC_BUFF_MAX_SIZE;
-        // batchWriteInfoTensor_.SetGlobalBuffer((__gm__ uint32_t*)(workspace), rankSize * U32_PER_ITEM);
-        batchWriteInfoTensor_.SetGlobalBuffer((__gm__ uint32_t*)(epRankTokenCntOutputGM_), rankSize * U32_PER_ITEM); // 出参地址临时使用
+        batchWriteInfoTensor_.SetGlobalBuffer((__gm__ uint32_t*)(workspace), rankSize * U32_PER_ITEM);
+        // batchWriteInfoTensor_.SetGlobalBuffer((__gm__ uint32_t*)(epRankTokenCntOutputGM_), rankSize * U32_PER_ITEM); // 出参地址临时使用
         windowInstatusTensor_.SetGlobalBuffer((__gm__ int32_t*)(windowInGM_ + IPC_DATA_OFFSET));
         windowInTensor_.SetGlobalBuffer((__gm__ T*)(windowInGM_ + IPC_DATA_OFFSET));
         windowOutstatusTensor_.SetGlobalBuffer((__gm__ int32_t*)(windowOutGM_ + IPC_DATA_OFFSET));
@@ -741,7 +741,7 @@ private:
         // 计算 epRankTokenCntOutputGT_
         GlobalTensor<int32_t> gEpRankTokenCntGT_;
         gEpRankTokenCntGT_.SetGlobalBuffer(
-            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen)),
+            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen) / sizeof(int32_t)),
             gNumTokensPerExpertAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
 
         for (int i = 0; i < rankSize; ++i) {
@@ -752,13 +752,21 @@ private:
             SyncFunc<AscendC::HardEvent::MTE3_S>();
             // AscendC::DumpTensor(gEpRankTokenCntGT_[i * numExperts], 768, 16);
         }
-        
+        PipeBarrier<PIPE_ALL>();
         // shape[rankSize, numExperts] --> shape[numExperts, rankSize]  value: cnt
         for (int srcRank = 0; srcRank < rankSize; ++srcRank) {
             for (int curExp = 0; curExp < numExperts; ++curExp) {
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(gEpRankTokenCntGT_[srcRank * numExperts + curExp]);
+                __asm__ __volatile__("");
                 int cnt = gEpRankTokenCntGT_.GetValue(srcRank * numExperts + curExp);
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(gEpRankTokenCntGT_[srcRank * numExperts + curExp]);
+                __asm__ __volatile__("");
+
                 // PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, srcRank:%d, curExp:%d, cnt:%d \n",
                 //     rank, blockIdx, srcRank, curExp, cnt);
+
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[curExp * rankSize + srcRank]);
                 __asm__ __volatile__("");
@@ -768,7 +776,7 @@ private:
                 __asm__ __volatile__("");
             }
         }
-        SyncFunc<AscendC::HardEvent::MTE3_S>();
+        PipeBarrier<PIPE_ALL>();
         
         
         // 计算 localEpTokenCntOutputGT_ , shape[localExperts, rankSize]  value: sumCnt 前缀和
@@ -776,7 +784,13 @@ private:
         int32_t preCnt = 0;
         for (int i = 0; i < localExpertNum; ++i) {
             for (int j = 0; j < rankSize; ++j) {
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[rank * localExpertNum + i * rankSize + j]);
+                __asm__ __volatile__("");
                 int cnt = epRankTokenCntOutputGT_.GetValue(rank * localExpertNum + i * rankSize + j);
+                __asm__ __volatile__("");
+                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[rank * localExpertNum + i * rankSize + j]);
+                __asm__ __volatile__("");
                 preCnt += cnt;
 
                 __asm__ __volatile__("");
@@ -789,11 +803,12 @@ private:
             }
         }
         SyncFunc<AscendC::HardEvent::MTE3_S>();
+        PipeBarrier<PIPE_ALL>();
 
         
         GlobalTensor<int32_t> gExpertMaxBsSrcGT_;
         gExpertMaxBsSrcGT_.SetGlobalBuffer(
-            (__gm__ int32_t *)(sendDataInput + tokenServerIdxAlignLen + tokenServerCntAlignLen + gNumTokensPerExpertAlignLen),
+            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen + gNumTokensPerExpertAlignLen) / sizeof(int32_t)),
             gExpertMaxBsSrcOffsetAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
         for (int i = 0; i < rankSize; ++i) {
             int32_t dataOffset = i * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum + MAX_BS * topkNum;
