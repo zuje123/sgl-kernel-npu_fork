@@ -47,6 +47,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     is_token_in_rank = token_idx_in_rank >= 0
     gbl_num_tokens_per_rank = num_tokens_per_rank.clone()
     dist.all_reduce(gbl_num_tokens_per_rank, group=group)
+
     try:
         try:
             return_values = buffer.get_dispatch_layout(topk_idx, num_experts)
@@ -85,7 +86,11 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     x_pure_rand = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device='npu')
     topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu') * (rank + 1)
     topk_weights_pure_rand = torch.randn((num_tokens, num_topk), dtype=torch.float32, device='npu')
+
+    torch.set_printoptions(threshold=float('inf'))
+    print(f'{rank=}, {topk_idx=}\n')
     print(f'{rank=}, {topk_weights=}\n')
+    print('', flush=True)
 
     if local_rank == 0:
         print(f'[testing] Running with {"FP8" if isinstance(x, tuple) else "BF16"}, with top-k ...', flush=True)
@@ -104,46 +109,42 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     #     'recv_data': recv_data
     # }
     # torch.save(data, 'notify_data_rank_{rank}_tensors.pt')
+    # param = {
+    #     'topk_idx': topk_idx,
+    #     'num_tokens_per_expert': num_tokens_per_expert,
+    #     'token_server_idx': token_server_idx,
+    #     'token_unique_per_server': token_unique_per_server,
+    #     'ep_rank_token_cnt': ep_rank_token_cnt,
+    #     'local_ep_token_cnt': local_ep_token_cnt,
+    #     'src_offset_rank_token_idx': src_offset_rank_token_idx,
+    #     'dst_offset_rank_token_idx': dst_offset_rank_token_idx,
+    #     'offset_inner': offset_inner,
+    #     'count_outer': count_outer,
+    #     'expand_idx': expand_idx,
+    # }
 
-    param = {
-        'topk_idx': topk_idx,
-        'num_tokens_per_expert': num_tokens_per_expert,
-        'token_server_idx': token_server_idx,
-        'token_unique_per_server': token_unique_per_server,
-        'ep_rank_token_cnt': ep_rank_token_cnt,
-        'local_ep_token_cnt': local_ep_token_cnt,
-        'src_offset_rank_token_idx': src_offset_rank_token_idx,
-        'dst_offset_rank_token_idx': dst_offset_rank_token_idx,
-        'offset_inner': offset_inner,
-        'count_outer': count_outer,
-        'expand_idx': expand_idx,
-    }
-    torch.save(param, f"notify_param_rank_{rank}_tensors.pt")
+    # param = torch.load(f"data/notify_param_rank_{rank}_tensors.pt")
+    # topk_idx = param["topk_idx"]
+    # num_tokens_per_expert = param["num_tokens_per_expert"]
+    # token_server_idx = param["token_server_idx"]
+    # token_unique_per_server = param["token_unique_per_server"]
+    # ep_rank_token_cnt = param["ep_rank_token_cnt"]
+    # local_ep_token_cnt = param["local_ep_token_cnt"]
+    # src_offset_rank_token_idx = param["src_offset_rank_token_idx"]
+    # dst_offset_rank_token_idx = param["dst_offset_rank_token_idx"]
+    # offset_inner = param["offset_inner"]
+    # count_outer = param["count_outer"]
+    # expand_idx = param["expand_idx"]
 
-    torch.set_printoptions(threshold=float('inf'))
-    print(f'{rank=}, {topk_idx=}\n')
-    filename = f"send_data_{rank}.txt"
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(f'{rank=}, {send_data=}\n')
-    # print(f'{rank=}, {send_data=}\n')
+    
+    print(f'{rank=}, {token_server_idx=}\n')
+    print(f'{rank=}, {token_unique_per_server=}\n')
+    print(f'{rank=}, {ep_rank_token_cnt=}\n')
     if local_rank == 0:
         filename2 = f"recv_data_{rank}.txt"
         with open(filename2, 'w', encoding='utf-8') as f:
             f.write(f'{rank=}, {recv_data=}\n')
-        # print(f'{recv_data=}\n')
-        print(f'{ep_rank_token_cnt=}\n')
-        print(f'{local_ep_token_cnt=}\n')
-        print(f'{src_offset_rank_token_idx=}\n')
-        print(f'{dst_offset_rank_token_idx=}\n')
-        print(f'{offset_inner=}\n')
-        print(f'{count_outer=}\n')
-        print(f'{expand_idx=}\n')
-        print(f'{topk_weights=}\n')
-    print(f'{rank=}, {token_server_idx=}\n')
-    print(f'{rank=}, {token_unique_per_server=}\n')
-    print(f'{rank=}, {num_tokens_per_expert=}\n')
-    
-    """
+
     normal_dispatch_args = {
         'x': x,
         'token_server_idx': token_server_idx,
@@ -160,18 +161,16 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     expandx_out, dynamic_scales_out, expand_scales = buffer.normal_dispatch_a2(**normal_dispatch_args)
     dist.barrier()
 
-    torch.set_printoptions(threshold=float('inf'))
-    print(f'{rank=}, {topk_idx=}\n')
-    filename = f"send_data_{rank}.txt"
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(f'{rank=}, {send_data=}\n')
+
+    # filename = f"send_data_{rank}.txt"
+    # with open(filename, 'w', encoding='utf-8') as f:
+    #     f.write(f'{rank=}, {send_data=}\n')
     # print(f'{rank=}, {send_data=}\n')
     if local_rank == 0:
         filename2 = f"recv_data_{rank}.txt"
         with open(filename2, 'w', encoding='utf-8') as f:
             f.write(f'{rank=}, {recv_data=}\n')
         # print(f'{recv_data=}\n')
-        print(f'{ep_rank_token_cnt=}\n')
         print(f'{local_ep_token_cnt=}\n')
         print(f'{src_offset_rank_token_idx=}\n')
         print(f'{dst_offset_rank_token_idx=}\n')
@@ -179,10 +178,8 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         print(f'{count_outer=}\n')
         print(f'{expand_idx=}\n')
         print(f'{topk_weights=}\n')
-    print(f'{rank=}, {token_server_idx=}\n')
-    print(f'{rank=}, {token_unique_per_server=}\n')
-    print(f'{rank=}, {expand_scales=}\n')
     print(f'{rank=}, {num_tokens_per_expert=}\n')
+    print(f'{rank=}, {expand_scales=}\n')
 
     # Test combine
     expert_idx = torch.zeros((num_tokens, num_experts), dtype=torch.int, device='npu')
@@ -194,8 +191,8 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         None,
         local_ep_token_cnt,
         offset_inner,
+        token_server_idx,
         count_outer,
-        token_unique_per_server,
         expand_scales,
         topk_idx,
         topk_weights
@@ -206,78 +203,6 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     print('combined_x', rank)
     print('', flush=True)
     time.sleep(1)
-    """
-
-    # # Test dispatch
-    # # noinspection PyShadowingNames
-    # def check_data(check_x, rank_prefix_matrix):
-    #     assert torch.allclose(check_x.amin(dim=1), check_x.amax(dim=1))
-    #     check_start = 0
-    #     for i in range(num_ranks):
-    #         check_end = rank_prefix_matrix[i][rank].item()
-    #         assert (check_x[check_start:check_end, :].int() - i).sum().item() == 0
-    #         check_start = check_end
-    # for current_x in filter(lambda elem: elem is not None, (x_pure_rand, x)):
-    #     if local_rank == 0:
-    #         print(f'[testing] Running with {"FP8" if isinstance(current_x, tuple) else "BF16"}, with top-k ...', flush=True)
-    #     dispatch_args = {'x': current_x, 'num_tokens_per_rank': num_tokens_per_rank,  'is_token_in_rank': is_token_in_rank,
-    #                         'num_tokens_per_expert': num_tokens_per_expert, 'config': config, 'topk_idx': topk_idx,
-    #                         'topk_weights': topk_weights_pure_rand if current_x is x_pure_rand else topk_weights}
-
-    #     recv_x, recv_topk_idx, recv_topk_weights, recv_num_tokens_per_expert_list, handle, event = buffer.dispatch(**dispatch_args)
-    #     recv_x = per_token_cast_back(*recv_x) if isinstance(recv_x, tuple) else recv_x
-
-    #     # Checks
-    #     rank_prefix_matrix = handle[0]
-    #     # todo 1. Duplicate tansmission to experts of the same rank.
-    #     # assert gbl_num_tokens_per_rank[rank].item() == recv_x.size(0), f'{gbl_num_tokens_per_rank[rank].item()} != {recv_x.size(0)}'
-    #     # todo 2. recv_num_tokens_per_expert_list is the prefix sum of the actual data.
-    #     # assert gbl_num_tokens_per_expert.view(num_ranks, -1)[rank].tolist() == recv_num_tokens_per_expert_list
-    #     # todo 3. empty return value rank_prefix_matrix
-    #     # if current_x is not x_pure_rand:
-    #     #     check_data(recv_x, rank_prefix_matrix)
-
-    #     # Test combine
-    #     combine_args = {'x': recv_x, 'handle': handle, 'config': config, 'async_finish': False, 'topk_weights': handle[7]}
-    #     combined_x, combined_topk_weights, event = buffer.combine(**combine_args)
-    #     check_x = combined_x.float()
-    #     ref_x = x_pure_rand if current_x is x_pure_rand else x
-    #     assert calc_diff(check_x, ref_x * handle[7].masked_fill(topk_idx == -1, 0).sum(dim=1).view(-1, 1)) < 5e-6
-
-    #     # For later tuning
-    #     dispatch_bf16_recv_bytes = recv_x.numel() * 2
-    #     combine_bf16_send_bytes = dispatch_bf16_recv_bytes
-
-    #     if local_rank == 0:
-    #         print(' passed', flush=True)
-    # if local_rank == 0:
-    #     print('', flush=True)
-
-    # # Tune dispatch performance
-    # fp8_factor = (1 + 4 / 128) / 2
-    # config = deep_ep.Config(24, 8, buffer_size)
-    # for current_x in filter(lambda elem: elem is not None, (x, )):
-    #     recv_bytes = (dispatch_bf16_recv_bytes * fp8_factor) if isinstance(current_x, tuple) else dispatch_bf16_recv_bytes
-
-    #     tune_args = {'x': current_x, 'config': config, 'num_tokens_per_rank': num_tokens_per_rank,  'is_token_in_rank': is_token_in_rank,
-    #             'num_tokens_per_expert': num_tokens_per_expert, 'topk_idx': topk_idx, 'topk_weights': topk_weights}
-
-    #     t = bench(lambda: buffer.dispatch(**tune_args))[0]
-    #     if local_rank == 0:
-    #         print(f'[tuning] Dispatch ({"FP8" if isinstance(current_x, tuple) else "BF16"}) {recv_bytes / 1e9 / t:.2f} GB/s (HCCS), avg_t: {t * 1e6:.2f} us', flush=True)
-    #         print('', flush=True)
-
-    # dispatch_args = {'x': x, 'num_tokens_per_rank': num_tokens_per_rank,
-    #                  'is_token_in_rank': is_token_in_rank, 'num_tokens_per_expert': num_tokens_per_expert,
-    #                  'config': config,
-    #                  'topk_idx': topk_idx, 'topk_weights': topk_weights}
-    # recv_x, _, _, _, handle, _ = buffer.dispatch(**dispatch_args)
-    # # Tune combine performance
-    # tune_args = {'x': recv_x, 'handle': handle, 'config': config, 'async_finish': False, 'topk_weights': handle[7]}
-    # t = bench(lambda: buffer.combine(**tune_args))[0]
-    # if local_rank == 0:
-    #     print(f'[tuning] Combine {combine_bf16_send_bytes / 1e9 / t:.2f} GB/s (HCCS), avg_t: {t * 1e6:.2f} us', flush=True)
-    #     print('', flush=True)
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames
