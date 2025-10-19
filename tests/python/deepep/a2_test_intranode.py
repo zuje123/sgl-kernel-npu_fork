@@ -84,7 +84,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     # Random data
     x = torch.ones((num_tokens, hidden), dtype=torch.bfloat16, device='npu') * rank
     x_pure_rand = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device='npu')
-    topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu') * (rank + 1)
+    topk_weights = torch.ones((num_tokens, num_topk), dtype=torch.float32, device='npu')
     topk_weights_pure_rand = torch.randn((num_tokens, num_topk), dtype=torch.float32, device='npu')
 
     torch.set_printoptions(threshold=float('inf'))
@@ -200,6 +200,12 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     combine_args = {'x': expandx_out, 'handle': handle, 'config': None, 'async_finish': False, 'topk_weights': topk_weights}
     combined_x, combined_topk_weights, event = buffer.combine_a2(**combine_args)
     dist.barrier()
+    filename = f"output_data_{rank}.txt"
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(f'{rank=}, {topk_idx=}\n')
+        f.write(f'{rank=}, {expand_scales=}\n')
+        f.write(f'{rank=}, expandx_out: {expandx_out.shape}, {expandx_out[:,0]}\n')
+        f.write(f'{rank=}, combined_x: {combined_x.shape}, {combined_x[:,0]}\n')
     print('combined_x', rank)
     print('', flush=True)
     time.sleep(1)

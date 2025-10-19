@@ -492,8 +492,11 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 offsetIndex++;
                 PipeBarrier<PIPE_V>();
 
-                PRINTF("[SumToWindow] rank:%d, coreId:%d, i:%d, j:%d, offsetValue:%d, globalBs:%d, axisK_:%d, ipcSliceSize:%d, offsetOnIpc:%d, scaleVal:%f, offsetIndex:%d\n",
-                    rankId_, coreIdx_, i, j, offsetValue, globalBs, axisK_, ipcSliceNodeSize, offsetOnIpc, scaleVal, offsetIndex);
+                PRINTF(
+                    "[SumToWindow] rank:%d, coreId:%d, i:%d, j:%d, offsetValue:%d, globalBs:%d, axisK_:%d, "
+                    "ipcSliceSize:%d, offsetOnIpc:%d, scaleVal:%f, offsetIndex:%d\n",
+                    rankId_, coreIdx_, i, j, offsetValue, globalBs, axisK_, ipcSliceSize, offsetOnIpc, scaleVal,
+                    offsetIndex);
             }
             PipeBarrier<PIPE_V>();
             LocalTensor<ExpandXType> castUbIn = mulBuf_.Get<ExpandXType>();
@@ -660,20 +663,22 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     }
     for (uint32_t i = startBs; i < endBs; i++) {
         int offsetPre = 0;
-        int offsetCur = countOuterGlobal_.GetValue(i);
-        if (i != 0U) {
-            offsetPre = countOuterGlobal_.GetValue(i - 1);
-        }
-        int copyNum = offsetCur - offsetPre;
-        if (!copyNum) {
-            break;
-        }
+        // int offsetCur = countOuterGlobal_.GetValue(i);
+        // if (i != 0U) {
+        //     offsetPre = countOuterGlobal_.GetValue(i - 1);
+        // }
+        // int copyNum = offsetCur - offsetPre;
+        // if (!copyNum) {
+        //     break;
+        // }
         Duplicate(sumFloatLocal_, 0.0f, axisH_);
-        for (int j = 0; j < copyNum; j++) {
+        for (int j = 0; j < serverNum; j++) {
             tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
-            int offsetOnIpc = (offsetOuterGlobal_.GetValue(offsetIndex) / axisBS_ * rankSizeOnWin_ * SERVER_RANK_SIZE +
-                               offsetOuterGlobal_.GetValue(offsetIndex) % axisBS_ * axisH_ * sizeof(ExpandXType)) /
-                              sizeof(ExpandXType);
+            int cntOuter = offsetOuterGlobal_.GetValue(offsetIndex);
+            if (cntOuter == -1) {
+                continue;
+            }
+            int offsetOnIpc = (cntOuter * axisH_ * sizeof(ExpandXType)) / sizeof(ExpandXType);
             DataCopy(tmpUb_, localInWindow_[offsetOnIpc], axisH_);
             moeSumQueue_.EnQue(tmpUb_);
             LocalTensor<ExpandXType> tmpOtherUb_ = moeSumQueue_.DeQue<ExpandXType>();
