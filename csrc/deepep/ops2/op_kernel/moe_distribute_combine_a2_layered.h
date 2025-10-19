@@ -446,9 +446,10 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         statusBuf_.FreeTensor<int64_t>(InUb);
         LocalTensor<int32_t> offsetReduceLocal = offsetReduceBuf_.Get<int32_t>();
         DataCopy(offsetReduceLocal,
-                 offsetInnerGlobal_[MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE * coreIdx_],
+                 offsetInnerGlobal_[MAX_BS * moeExpertNum_ * rankId_ + (MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE * coreIdx_)],
                  RoundUp(MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE, (uint32_t)(UB_ALIGN / sizeof(int32_t))));
         SyncFunc<AscendC::HardEvent::MTE2_S>();
+        AscendC::DumpTensor(offsetReduceLocal, 452, 128);
 
         uint64_t copyAddr = shareAddreRank[rankId_ % SERVER_RANK_SIZE] + 
                             static_cast<uint64_t>(IPC_DATA_OFFSET + coreIdx_ * ipcSliceNodeSize);
@@ -468,6 +469,9 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 uint32_t offsetOnIpc = (offsetValue / (globalBs * axisK_) * ipcSliceSize +
                         offsetValue % (globalBs * axisK_) * (axisH_ + 16U) *
                         sizeof(ExpandXType)) / sizeof(ExpandXType);
+                // uint32_t offsetOnIpc = (offsetValue / (MAX_BS) * ipcSliceSize +
+                //         offsetValue % (MAX_BS) * (axisH_ + 16U) *
+                //         sizeof(ExpandXType)) / sizeof(ExpandXType);
                 DataCopy(tmpUb_, shareMemGlobal_[offsetOnIpc], axisH_ + 16U);
                 SyncFunc<AscendC::HardEvent::MTE2_S>();
                 LocalTensor<float> InUbTemp = tmpUb_[axisH_].template ReinterpretCast<float>();
@@ -483,6 +487,9 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 moeSumQueue_.FreeTensor<ExpandXType>(tmpOtherUb_);
                 offsetIndex++;
                 PipeBarrier<PIPE_V>();
+
+                PRINTF("[SumToWindow] rank:%d, coreId:%d, i:%d, j:%d, offsetValue:%d, globalBs:%d, axisK_:%d, ipcSliceSize:%d, offsetOnIpc:%d, scaleVal:%f, offsetIndex:%d\n",
+                    rankId_, coreIdx_, i, j, offsetValue, globalBs, axisK_, ipcSliceNodeSize, offsetOnIpc, scaleVal, offsetIndex);
             }
             PipeBarrier<PIPE_V>();
             LocalTensor<ExpandXType> castUbIn = mulBuf_.Get<ExpandXType>();
