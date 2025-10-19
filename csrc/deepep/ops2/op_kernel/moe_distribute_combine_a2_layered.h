@@ -445,9 +445,9 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 
         statusBuf_.FreeTensor<int64_t>(InUb);
         LocalTensor<int32_t> offsetReduceLocal = offsetReduceBuf_.Get<int32_t>();
-        GlobalTensor<int32_t> offsetReduceGt =
-            offsetInnerGlobal_[MAX_BS * moeExpertNum_ * rankId_ +
-                               (MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE * coreIdx_)];
+
+        int32_t targetRankId = coreIdx_ * SERVER_RANK_SIZE + rankId_ % SERVER_RANK_SIZE;
+        GlobalTensor<int32_t> offsetReduceGt = offsetInnerGlobal_[MAX_BS * moeExpertNum_ * targetRankId];
         // DataCopy(offsetReduceLocal,
         //          offsetInnerGlobal_[MAX_BS * moeExpertNum_ * rankId_ + (MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE * coreIdx_)],
         //          RoundUp(MAX_BS * localMoeExpertNum_ * SERVER_RANK_SIZE, (uint32_t)(UB_ALIGN / sizeof(int32_t))));
@@ -465,13 +465,14 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         for (uint32_t i = 0U; i < MAX_BS; i++) {
             Duplicate(sumFloatLocal_, 0.0f, axisH_);
             for (uint32_t j = 0U; j < static_cast<uint32_t>(localMoeExpertNum_ * SERVER_RANK_SIZE); j++) {
-                int32_t offsetValue = offsetReduceGt.GetValue(i + j * MAX_BS);
+                int32_t expId = j + rankId_ * localMoeExpertNum_;
+                int32_t offsetValue = offsetReduceGt.GetValue(i * moeExpertNum_ + expId);
                 if (offsetValue == -1)
                     continue;
                 tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
-                uint32_t offsetOnIpc = (offsetValue / (globalBs * axisK_) * ipcSliceSize +
-                        offsetValue % (globalBs * axisK_) * (axisH_ + 16U) *
-                        sizeof(ExpandXType)) / sizeof(ExpandXType);
+                uint32_t offsetOnIpc = (j / localMoeExpertNum_ * ipcSliceSize +
+                                        offsetValue * (axisH_ + 16U) * sizeof(ExpandXType)) /
+                                       sizeof(ExpandXType);
                 // uint32_t offsetOnIpc = (offsetValue / (MAX_BS) * ipcSliceSize +
                 //         offsetValue % (MAX_BS) * (axisH_ + 16U) *
                 //         sizeof(ExpandXType)) / sizeof(ExpandXType);
