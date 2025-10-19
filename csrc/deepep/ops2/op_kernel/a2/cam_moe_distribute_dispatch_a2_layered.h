@@ -997,7 +997,7 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
                 LocalTensor<ExpandXOutType> tokenLt = localUB.ReinterpretCast<ExpandXOutType>();
                 DataCopyExtParams tokenParams{1, static_cast<uint32_t>(tokenLenInStruct_), 0, 0, 0};
-                DataCopyPad(expandXOutGMTensor_[dstOffset], tokenLt, tokenParams);  // local --> out
+                DataCopyPad(expandXOutGMTensor_[dstOffset * axisH_], tokenLt, tokenParams);  // local --> out
 
                 LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
                 SyncFunc<AscendC::HardEvent::MTE2_S>();
@@ -1019,11 +1019,11 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 //     AscendC::DumpTensor(weightLt, 1016, 32);
                 // }
 
-                // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
-                //     localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
-                //     i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d\n", 
-                //     rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
-                //     tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index);
+                PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
+                    localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
+                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d, tokenLt:%d\n", 
+                    rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
+                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index, tokenLt(0));
 
                 // weightLt(0) = weightVal;
                 // AscendC::DumpTensor(weightsOutGt, 1019, 148);
