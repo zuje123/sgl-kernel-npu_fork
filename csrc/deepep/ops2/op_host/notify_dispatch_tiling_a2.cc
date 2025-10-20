@@ -49,6 +49,7 @@ constexpr uint32_t OP_TYPE_ALL_TO_ALL = 8U;  // numeric representation of AlltoA
 
 constexpr uint32_t INPUT_SEND_DATA_INDEX = 0;
 constexpr uint32_t INPUT_TOKEN_PER_EXPERT_INDEX = 1;
+constexpr uint32_t INPUT_TMP_DATA_INDEX = 2;
 
 constexpr uint32_t OUTPUT_SEND_DATA_OFFSET_INDEX = 0;
 constexpr uint32_t OUTPUT_RECV_DATA_INDEX = 1;
@@ -211,6 +212,16 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
             nodeName,
             "tokenPerExpertData datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
             static_cast<ge::DataType>(tokenPerExpertData->GetDataType())),
+        return false);
+    auto tmpData = context->GetInputDesc(INPUT_TMP_DATA_INDEX); // 用于算子中临时存数的空间，与recvData相同大小
+    OP_TILING_CHECK(tmpData == nullptr, OP_LOGE(nodeName, "tmpData is null."), return false);
+    OP_TILING_CHECK(
+        (tmpData->GetDataType() != ge::DT_BF16) && (tmpData->GetDataType() != ge::DT_FLOAT16) &&
+            (tmpData->GetDataType() != ge::DT_FLOAT) && (tmpData->GetDataType() != ge::DT_INT32),
+        OP_LOGE(
+            nodeName,
+            "tmpData datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+            static_cast<ge::DataType>(tmpData->GetDataType())),
         return false);
 
     auto sendDataOffset = context->GetOutputDesc(OUTPUT_SEND_DATA_OFFSET_INDEX);

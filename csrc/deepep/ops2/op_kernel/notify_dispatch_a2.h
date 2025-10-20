@@ -13,21 +13,24 @@
 using namespace AscendC;
 using namespace Moe;
 
-#define KERNELS_ARGS_FUN_A2_ALL2ALL()                                                                               \
-    GM_ADDR sendDataInput, GM_ADDR tokenPerExpertDataInput, GM_ADDR sendDataOffsetOutput, GM_ADDR recvDataOutput,   \
-        int64_t len, int64_t numTokens, int64_t topkNum, int64_t numExperts, int op, int root, int cycleCount, GM_ADDR scale, int64_t scaleCount,        \
-        GM_ADDR offset, int localRank, int localRankSize, GM_ADDR commArgs,                                         \
+#define KERNELS_ARGS_FUN_A2_ALL2ALL()                                                           \
+    GM_ADDR sendDataInput, GM_ADDR tokenPerExpertDataInput, GM_ADDR tmpDataInput,               \
+        GM_ADDR sendDataOffsetOutput, GM_ADDR recvDataOutput,                                   \
+        int64_t len, int64_t numTokens, int64_t topkNum, int64_t numExperts, int op,            \
+        int root, int cycleCount, GM_ADDR scale, int64_t scaleCount,                            \
+        GM_ADDR offset, int localRank, int localRankSize, GM_ADDR commArgs,                     \
         GM_ADDR tokenServerIdxOutput, GM_ADDR tokensUniquePerServerOutput,                      \
         GM_ADDR epRankTokenCntOutput, GM_ADDR localEpTokenCntOutput,                            \
         GM_ADDR srcOffsetRankTokenIdxOutput, GM_ADDR dstOffsetRankTokenIdxOutput,               \
         GM_ADDR offsetInnerOutput, GM_ADDR countOuterOutput, GM_ADDR expandIdxOutput,           \
         GM_ADDR workspace, GM_ADDR tiling
 
-#define KERNELS_ARGS_CALL_A2_ALL2ALL()                                                                      \
-    sendDataInput, tokenPerExpertDataInput, sendDataOffsetOutput, recvDataOutput, len, numTokens, topkNum, numExperts, op, root, \
-    cycleCount, scale, scaleCount, offset, localRank, localRankSize, commArgs, \
+#define KERNELS_ARGS_CALL_A2_ALL2ALL()                                                              \
+    sendDataInput, tokenPerExpertDataInput, tmpDataInput,                                           \
+    sendDataOffsetOutput, recvDataOutput, len, numTokens, topkNum, numExperts, op, root,            \
+    cycleCount, scale, scaleCount, offset, localRank, localRankSize, commArgs,                      \
     tokenServerIdxOutput, tokensUniquePerServerOutput, epRankTokenCntOutput, localEpTokenCntOutput, \
-    srcOffsetRankTokenIdxOutput, dstOffsetRankTokenIdxOutput, offsetInnerOutput, countOuterOutput, \
+    srcOffsetRankTokenIdxOutput, dstOffsetRankTokenIdxOutput, offsetInnerOutput, countOuterOutput,  \
     expandIdxOutput, workspace, tiling
 
 #define printflag(ss)                                           \
@@ -72,7 +75,7 @@ class NotifyDispatchA2 {
     constexpr static uint32_t EXP_TOKEN_COUNT_FLAG_CNT = UB_ALIGN / sizeof(int32_t);  // 8
     constexpr static uint32_t GM_ALIGN = 64;            // GM按64字节对齐
 
-    constexpr static uint32_t MAX_BS = 16;            // 每卡支持的最大bs
+    constexpr static uint32_t MAX_BS = 1024;            // 每卡支持的最大bs
 
 public:
     __aicore__ inline NotifyDispatchA2(int rank, int rankSize, uint32_t extraFlag)
@@ -103,12 +106,14 @@ public:
 
         this->sendDataInput = (__gm__ T *)sendDataInput;
         this->tokenPerExpertDataInput = (__gm__ int32_t *)tokenPerExpertDataInput;
+        this->tmpDataInput = (__gm__ int32_t *)tmpDataInput;
         this->sendDataOffsetOutput = (__gm__ T *)sendDataOffsetOutput;
         this->recvDataOutput = (__gm__ T *)recvDataOutput;
         this->epRankTokenCntOutputGM_ = (__gm__ int32_t *)epRankTokenCntOutput;
 
         sendDataInputGt.SetGlobalBuffer((__gm__ T *)sendDataInput);
         tokenPerExpertDataInputGt.SetGlobalBuffer((__gm__ int32_t *)tokenPerExpertDataInput);
+        tmpDataInputGt.SetGlobalBuffer((__gm__ int32_t *)tmpDataInput);
         sendDataOffsetOutputGt.SetGlobalBuffer((__gm__ T *)sendDataOffsetOutput);
         recvDataOutputGt.SetGlobalBuffer((__gm__ T *)recvDataOutput);
 
@@ -162,6 +167,11 @@ public:
             hccl_.Finalize();
             printflag("AfterFinalize\n");
         }
+        // if (blockIdx == 0) {
+        //     AscendC::DumpTensor(tokenServerIdxOutputGT_, 166, 16);
+        //     AscendC::DumpTensor(countOuterOutputGT_, 167, 16);
+        //     AscendC::DumpTensor(expandIdxOutputGT_, 168, 16);
+        // }
         PRINTF("[notify] rank:%d, block:%d \n", rank, blockIdx);
     }
 
@@ -250,8 +260,8 @@ private:
         tokenServerIdxAlignLen = Ceil(MAX_BS * serverNum * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
         gTokenServerIdxAlignLen = Ceil(rankSize * MAX_BS * serverNum * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
 
-        tokenExpertIdxAlignLen = Ceil(MAX_BS * topkNum * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
-        gTokenExpertIdxAlignLen = Ceil(rankSize * MAX_BS * topkNum * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
+        tokenExpertIdxAlignLen = Ceil(MAX_BS * numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
+        gTokenExpertIdxAlignLen = Ceil(rankSize * MAX_BS * numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
 
         expertMaxBsSrcOffsetAlignLen = Ceil(numExperts * MAX_BS * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
         gExpertMaxBsSrcOffsetAlignLen = Ceil(rankSize * numExperts * MAX_BS * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
@@ -607,7 +617,8 @@ private:
     __aicore__ inline void SplitAndCalcData()
     {
         pipe.Reset();
-        pipe.InitBuffer(tempBuf2_, 1000 * UB_ALIGN);
+        pipe.InitBuffer(tempBuf_, UB_ALIGN); // 存放临时的立即数
+        pipe.InitBuffer(tempBuf2_, 5000 * UB_ALIGN); // MAX_BS <= 4096, 要能放下一个bs的数据
 
         if (blockIdx == 0) {
             // printflag("before BuildTokenUniquePerServerData\n");
@@ -619,260 +630,381 @@ private:
             BuildTokenSeverIdxData();
             // printflag("after BuildTokenSeverIdxData\n");
         }
-        
         if (blockIdx == 2) {
             // printflag("before BuildCountOuterData\n");
             BuildCountOuterData();
             // printflag("after BuildCountOuterData\n");
         }
-
         if (blockIdx == 3) {
             // printflag("before BuildEpRankTokenCntAndSrcDstData\n");
             BuildEpRankTokenCntAndSrcDstData();
             // printflag("after BuildEpRankTokenCntAndSrcDstData\n");
         }
-
         if (blockIdx == 4) {
             // printflag("before BuildExpandIdxData\n");
             BuildExpandIdxData();
         }
-        
+        if (blockIdx == 5) {
+            // printflag("before BuildOffsetInnerData\n");
+            BuildOffsetInnerData();
+        }
     }
 
     __aicore__ inline void BuildTokenSeverIdxData()
     {
         // printflag("enter BuildTokenSeverIdxData\n");
         // 计算 tokenServerIdxOutputGT_
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
+        DataCopyExtParams copyParams{1, static_cast<uint32_t>(MAX_BS * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams{false, 0, 0, 0};
+
          // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen + tokenServerCntLen
         int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS;
-        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 648, MAX_BS * serverNum);
-        // AscendC::DumpTensor(tmpGT_, 652, MAX_BS * serverNum);
-        // CpGM2GMPingPong<int32_t>(tokenServerIdxAlignLen, recvDataOutputGt[curRankDataOffset], tmpGT_, COPYONLY);
-        // SyncFunc<AscendC::HardEvent::MTE3_S>();
-        // PRINTF("[BuildTokenSeverIdxData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(tmpGT_, 656, MAX_BS * serverNum);
-        for (int i = 0; i < MAX_BS * serverNum; ++i) {
-            int32_t val = recvDataOutputGt[curRankDataOffset].GetValue(i); // -1表示没有，0-N表示序号
-            // PRINTF("[BuildTokenSeverIdxData] rank:%d, blockIdx:%d, val:%d\n", rank, blockIdx, val);
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokenServerIdxOutputGT_[i]);
-            __asm__ __volatile__("");
-            if (val >= 0) {
-                tokenServerIdxOutputGT_.SetValue(i, val);
-            } else {
-                tokenServerIdxOutputGT_.SetValue(i, -1);
-            }
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokenServerIdxOutputGT_[i]);
-            __asm__ __volatile__("");
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 652, 16);
+
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        for (int i = 0; i < serverNum; ++i) {
+            int32_t recvOffset = curRankDataOffset + i * MAX_BS; // 每次从recvdata中拷贝 MAX_BS 个数
+            // PRINTF("[BuildTokenSeverIdxData] rank:%d, blockIdx:%d, recvOffset:%d\n", rank, blockIdx, recvOffset);
+
+            event_t eventId = EVENT_ID0;
+            AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+            DataCopyPad(tmpLt, recvDataOutputGt[recvOffset], copyParams, padParams);
+            
+            AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+            AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+            // AscendC::DumpTensor(tmpLt, 667, 16);
+
+            int32_t tarOffset = i * MAX_BS;
+            DataCopyPad(tokenServerIdxOutputGT_[tarOffset], tmpLt, copyParams);
+            // AscendC::DumpTensor(tokenServerIdxOutputGT_[tarOffset], 671, 16);
+
+            AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
         }
-        PipeBarrier<PIPE_ALL>();
-        // SyncFunc<AscendC::HardEvent::S_MTE3>();
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        // AscendC::DumpTensor(tokenServerIdxOutputGT_, 677, 16);
     }
 
     __aicore__ inline void BuildExpandIdxData()
     {
         // printflag("enter BuildExpandIdxData\n");
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
+        DataCopyExtParams copyParams{1, static_cast<uint32_t>(MAX_BS * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams{false, 0, 0, 0};
+
         // 计算 expandIdxOutputGT_ , 对应于输入 tokenExpertIdx
         // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen + tokenServerCntLen + tokenServerIdxLen
         int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum;
-        CpGM2GMPingPong<int32_t>(tokenExpertIdxAlignLen, recvDataOutputGt[curRankDataOffset], expandIdxOutputGT_, COPYONLY);
-        SyncFunc<AscendC::HardEvent::MTE3_S>();
-        // PRINTF("[BuildExpandIdxData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 657, MAX_BS * topkNum);
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 725, 16);
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        for (int i = 0; i < numExperts; ++i) {
+            int32_t recvOffset = curRankDataOffset + i * MAX_BS; // 每次从recvdata中拷贝 MAX_BS 个数
+            // PRINTF("[BuildExpandIdxData] rank:%d, blockIdx:%d, recvOffset:%d\n", rank, blockIdx, recvOffset);
+
+            event_t eventId = EVENT_ID0;
+            AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+            DataCopyPad(tmpLt, recvDataOutputGt[recvOffset], copyParams, padParams);
+            
+            AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+            AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+            // AscendC::DumpTensor(tmpLt, 740, 16);
+
+            int32_t tarOffset = i * MAX_BS;
+            DataCopyPad(expandIdxOutputGT_[tarOffset], tmpLt, copyParams);
+            // AscendC::DumpTensor(expandIdxOutputGT_[tarOffset], 744, 16);
+
+            AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
+        }
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        // AscendC::DumpTensor(expandIdxOutputGT_, 750, 16);
+    }
+
+    __aicore__ inline void BuildOffsetInnerData()
+    {
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
+        DataCopyExtParams copyParams{1, static_cast<uint32_t>(MAX_BS * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams{false, 0, 0, 0};
+
+        // 计算 offsetInnerOutputGT_ , 为全局的 expandIdx
+        // shape[num_rank * max_bs, expertNum]  value: inner_offset
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        for (int srcRank = 0; srcRank < rankSize; ++srcRank) {
+            int32_t dataOffset = srcRank * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum;
+            for (int i = 0; i < numExperts; ++i) {
+                int32_t recvOffset = dataOffset + i * MAX_BS; // 每次从recvdata中拷贝 MAX_BS 个数
+                // PRINTF("[BuildOffsetInnerData] rank:%d, blockIdx:%d, recvOffset:%d\n", rank, blockIdx, recvOffset);
+
+                event_t eventId = EVENT_ID0;
+                AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+                DataCopyPad(tmpLt, recvDataOutputGt[recvOffset], copyParams, padParams);
+                
+                AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+                AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+                // AscendC::DumpTensor(tmpLt, 740, 16);
+
+                int32_t tarOffset = (srcRank * MAX_BS * numExperts) + i * MAX_BS;
+                DataCopyPad(offsetInnerOutputGT_[tarOffset], tmpLt, copyParams);
+                // AscendC::DumpTensor(offsetInnerOutputGT_[tarOffset], 744, 16);
+
+                AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
+            }
+        }
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
     }
 
     __aicore__ inline void BuildCountOuterData()
     {
         // printflag("enter BuildCountOuterData\n");
         // 计算 countOuterOutputGT_
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
+        DataCopyExtParams copyParams{1, static_cast<uint32_t>(MAX_BS * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams{false, 0, 0, 0};
+
         // offset + numTokensPerExpertLen + numTokensUniquePerServerLen + numTokensPerServerLen
         int32_t curRankDataOffset = rank * len + numExperts + serverNum + MAX_BS * serverNum;
-        // DataCopyPad(tokensServerCntLocal, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
-        // CpGM2GMPingPong<int32_t>(tokenServerCntAlignLen, recvDataOutputGt[curRankDataOffset], tokensServerCntGT_, COPYONLY);
-        // SyncFunc<AscendC::HardEvent::MTE3_S>();
         // PRINTF("[BuildCountOuterData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 717, MAX_BS);
-        // AscendC::DumpTensor(tokensServerCntGT_, 660, MAX_BS);
-        for (int i = 0; i < MAX_BS; ++i) {
-            int32_t val = recvDataOutputGt[curRankDataOffset].GetValue(i);
-            // PRINTF("[BuildCountOuterData] rank:%d, blockIdx:%d, val:%d\n", rank, blockIdx, val);
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(countOuterOutputGT_[i]);
-            __asm__ __volatile__("");
-            countOuterOutputGT_.SetValue(i, val);
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(countOuterOutputGT_[i]);
-            __asm__ __volatile__("");
-        }
-        PipeBarrier<PIPE_ALL>();
+
+        DataCopyPad(tmpLt, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
+
+        SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
+        // AscendC::DumpTensor(tmpLt, 744, 16);
+
+        DataCopyPad(countOuterOutputGT_, tmpLt, copyParams);
+        SyncFunc<AscendC::HardEvent::MTE3_MTE2>();
+        // AscendC::DumpTensor(countOuterOutputGT_, 749, 16);
     }
 
     __aicore__ inline void BuildTokenUniquePerServerData()
     {
         // printflag("enter BuildTokenUniquePerServerData\n");
         // 计算 tokensUniquePerServerOutputGT_
-        LocalTensor<int32_t> tokensUniquePerServerLocal = tempBuf2_.Get<int32_t>();
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
         DataCopyExtParams copyParams{1, static_cast<uint32_t>(serverNum * sizeof(int32_t)), 0, 0, 0};
         DataCopyPadExtParams<int32_t> padParams{false, 0, 0, 0};
 
         int32_t curRankDataOffset = rank * len + numExperts; // offset + numTokensPerExpertLen
-        DataCopyPad(tokensUniquePerServerLocal, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
-        pipe_barrier(PIPE_ALL);
-        SyncFunc<AscendC::HardEvent::MTE3_S>();
         // PRINTF("[BuildTokenUniquePerServerData] rank:%d, blockIdx:%d, curRankDataOffset:%d\n", rank, blockIdx, curRankDataOffset);
-        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 672, 32);
-        // AscendC::DumpTensor(tokensUniquePerServerLocal, 679, serverNum);
-        for (int i = 0; i < serverNum; ++i) {
-            int32_t val = tokensUniquePerServerLocal.GetValue(i);
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokensUniquePerServerOutputGT_[i]);
-            __asm__ __volatile__("");
-            tokensUniquePerServerOutputGT_.SetValue(i, val);
-            __asm__ __volatile__("");
-            AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(tokensUniquePerServerOutputGT_[i]);
-            __asm__ __volatile__("");
-        }
+        DataCopyPad(tmpLt, recvDataOutputGt[curRankDataOffset], copyParams, padParams);
+
+        SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
+
+        DataCopyPad(tokensUniquePerServerOutputGT_, tmpLt, copyParams);
+        SyncFunc<AscendC::HardEvent::MTE3_MTE2>();
     }
 
     __aicore__ inline void BuildEpRankTokenCntAndSrcDstData()
     {
         printflag("enter BuildEpRankTokenCntAndSrcDstData\n");
-        // 计算 epRankTokenCntOutputGT_
+        LocalTensor<int32_t> tmpLt = tempBuf2_.Get<int32_t>();
+        
         GlobalTensor<int32_t> gEpRankTokenCntGT_;
         gEpRankTokenCntGT_.SetGlobalBuffer(
-            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen) / sizeof(int32_t)),
-            gNumTokensPerExpertAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
+            (__gm__ int32_t *)(tmpDataInput),
+            gNumTokensPerExpertAlignLen / sizeof(int32_t)); // tmpDataInput地址用作临时存数
+        // 计算 epRankTokenCntOutputGT_
+        DataCopyExtParams copyParams1{1, static_cast<uint32_t>(numExperts * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams1{false, 0, 0, 0};
+        int32_t curRankDataOffset = rank * len ;
+        // AscendC::DumpTensor(recvDataOutputGt[curRankDataOffset], 652, 16);
 
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
         for (int i = 0; i < rankSize; ++i) {
-            int32_t dataOffset = i * len;
-            // PRINTF("[BuildEpRankTokenCntAndSrcDstData1] rank:%d, blockIdx:%d, dataOffset:%d\n", rank, blockIdx, dataOffset);
-            // AscendC::DumpTensor(recvDataOutputGt[dataOffset], 765, 16);
-            CpGM2GMPingPong<int32_t>(numTokensPerExpertAlignLen, recvDataOutputGt[dataOffset], gEpRankTokenCntGT_[i * numExperts], COPYONLY);
-            SyncFunc<AscendC::HardEvent::MTE3_S>();
-            // AscendC::DumpTensor(gEpRankTokenCntGT_[i * numExperts], 768, 16);
+            int32_t recvOffset = i * len; // 每次从recvdata中拷贝 MAX_BS 个数
+            // PRINTF("[BuildEpRankTokenCntAndSrcDstData1] rank:%d, blockIdx:%d, recvOffset:%d\n", rank, blockIdx, recvOffset);
+
+            event_t eventId = EVENT_ID0;
+            AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+            DataCopyPad(tmpLt, recvDataOutputGt[recvOffset], copyParams1, padParams1);
+            
+            AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+            AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+            // AscendC::DumpTensor(tmpLt, 667, 16);
+
+            int32_t tarOffset = i * numExperts;
+            DataCopyPad(gEpRankTokenCntGT_[tarOffset], tmpLt, copyParams1);
+            // AscendC::DumpTensor(tokenServerIdxOutputGT_[tarOffset], 671, 16);
+
+            AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
         }
-        PipeBarrier<PIPE_ALL>();
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+
+        SyncFunc<AscendC::HardEvent::MTE3_S>();
+        DataCopyExtParams copyParams2{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams2{false, 0, 0, 0};
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
         // shape[rankSize, numExperts] --> shape[numExperts, rankSize]  value: cnt
         for (int srcRank = 0; srcRank < rankSize; ++srcRank) {
             for (int curExp = 0; curExp < numExperts; ++curExp) {
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(gEpRankTokenCntGT_[srcRank * numExperts + curExp]);
-                __asm__ __volatile__("");
-                int cnt = gEpRankTokenCntGT_.GetValue(srcRank * numExperts + curExp);
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(gEpRankTokenCntGT_[srcRank * numExperts + curExp]);
-                __asm__ __volatile__("");
+                int32_t inOffset = srcRank * numExperts + curExp; // 只拷贝一个值
+                PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, srcRank:%d, curExp:%d, inOffset:%d \n",
+                    rank, blockIdx, srcRank, curExp, inOffset);
 
-                // PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, srcRank:%d, curExp:%d, cnt:%d \n",
-                //     rank, blockIdx, srcRank, curExp, cnt);
+                event_t eventId = EVENT_ID0;
+                AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
 
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[curExp * rankSize + srcRank]);
-                __asm__ __volatile__("");
-                epRankTokenCntOutputGT_.SetValue(curExp * rankSize + srcRank, cnt);
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[curExp * rankSize + srcRank]);
-                __asm__ __volatile__("");
+                DataCopyPad(tmpLt, gEpRankTokenCntGT_[inOffset], copyParams2, padParams2);
+
+                AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+                AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+                // AscendC::DumpTensor(tmpLt, 667, 16);
+
+                int32_t outOffset = curExp * rankSize + srcRank;
+                DataCopyPad(epRankTokenCntOutputGT_[outOffset], tmpLt, copyParams2);
+                // AscendC::DumpTensor(epRankTokenCntOutputGT_[tarOffset], 671, 16);
+
+                AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
             }
         }
-        PipeBarrier<PIPE_ALL>();
-        
-        
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        SyncFunc<AscendC::HardEvent::MTE3_S>();
+
         // 计算 localEpTokenCntOutputGT_ , shape[localExperts, rankSize]  value: sumCnt 前缀和
         int32_t localExpertNum = numExperts / rankSize;
         int32_t preCnt = 0;
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
         for (int i = 0; i < localExpertNum; ++i) {
             for (int j = 0; j < rankSize; ++j) {
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[rank * localExpertNum + i * rankSize + j]);
-                __asm__ __volatile__("");
-                int cnt = epRankTokenCntOutputGT_.GetValue(rank * localExpertNum + i * rankSize + j);
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(epRankTokenCntOutputGT_[rank * localExpertNum + i * rankSize + j]);
-                __asm__ __volatile__("");
-                preCnt += cnt;
+                int32_t inOffset = (rank * localExpertNum + i) * rankSize + j; // 拷贝当前专家的1个值，对应不同rank来的
 
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(localEpTokenCntOutputGT_[i * rankSize + j]);
-                __asm__ __volatile__("");
-                localEpTokenCntOutputGT_.SetValue(i * rankSize + j, preCnt);
-                __asm__ __volatile__("");
-                AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(localEpTokenCntOutputGT_[i * rankSize + j]);
-                __asm__ __volatile__("");
+                event_t eventId = EVENT_ID0;
+                AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+                DataCopyPad(tmpLt, epRankTokenCntOutputGT_[inOffset], copyParams2, padParams2);
+
+                SyncFunc<AscendC::HardEvent::MTE2_S>();
+                int32_t cnt = tmpLt(0);
+                pipe_barrier(PIPE_ALL);
+                preCnt += cnt;
+                tmpLt(0) = preCnt;
+                pipe_barrier(PIPE_ALL);
+                PRINTF("[BuildEpRankTokenCntAndSrcDstData3] rank:%d, blockIdx:%d, i:%d, j:%d, inOffset:%d, cnt:%d, preCnt:%d \n",
+                    rank, blockIdx, i, j, inOffset, cnt, preCnt);
+
+                AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+                AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+                // AscendC::DumpTensor(tmpLt, 667, 16);
+
+                int32_t outOffset = i * rankSize + j;
+                DataCopyPad(localEpTokenCntOutputGT_[outOffset], tmpLt, copyParams2);
+                // AscendC::DumpTensor(epRankTokenCntOutputGT_[tarOffset], 671, 16);
+
+                AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
             }
         }
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
         SyncFunc<AscendC::HardEvent::MTE3_S>();
-        PipeBarrier<PIPE_ALL>();
 
-        
+
         GlobalTensor<int32_t> gExpertMaxBsSrcGT_;
         gExpertMaxBsSrcGT_.SetGlobalBuffer(
-            (__gm__ int32_t *)(sendDataInput + (tokenServerIdxAlignLen + tokenServerCntAlignLen + gNumTokensPerExpertAlignLen) / sizeof(int32_t)),
+            (__gm__ int32_t *)(tmpDataInput + (gNumTokensPerExpertAlignLen) / sizeof(int32_t)),
             gExpertMaxBsSrcOffsetAlignLen / sizeof(int32_t)); // sendDataInput地址用作临时存数
-        for (int i = 0; i < rankSize; ++i) {
-            int32_t dataOffset = i * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum + MAX_BS * topkNum;
-            // PRINTF("[BuildEpRankTokenCntAndSrcDstData2] rank:%d, blockIdx:%d, dataOffset:%d\n", rank, blockIdx, dataOffset);
-            // AscendC::DumpTensor(recvDataOutputGt[dataOffset], 816, 32);
-            CpGM2GMPingPong<int32_t>(expertMaxBsSrcOffsetAlignLen, recvDataOutputGt[dataOffset], gExpertMaxBsSrcGT_[i * numExperts * MAX_BS], COPYONLY);
-            SyncFunc<AscendC::HardEvent::MTE3_S>();
-            // AscendC::DumpTensor(gExpertMaxBsSrcGT_[i * numExperts * MAX_BS], 819, 32);
-        }
+        // 计算 gExpertMaxBsSrcGT_
+        DataCopyExtParams copyParams3{1, static_cast<uint32_t>(MAX_BS * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams3{false, 0, 0, 0};
 
-        /** 计算 srcOffsetRankTokenIdxOutputGT_ / dstOffsetRankTokenIdxOutputGT_ / offsetInnerOutputGT_
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        for (int i = 0; i < rankSize; ++i) {
+            int32_t dataOffset = i * len + numExperts + serverNum + MAX_BS * serverNum + MAX_BS + MAX_BS * serverNum + MAX_BS * numExperts;
+            for (int j = 0; j < numExperts; ++j) {
+                int32_t recvOffset = dataOffset + j * MAX_BS; // 每次从recvdata中拷贝 MAX_BS 个数
+                // PRINTF("[BuildEpRankTokenCntAndSrcDstData1] rank:%d, blockIdx:%d, recvOffset:%d\n", rank, blockIdx, recvOffset);
+
+                event_t eventId = EVENT_ID0;
+                AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
+                DataCopyPad(tmpLt, recvDataOutputGt[recvOffset], copyParams3, padParams3);
+                
+                AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+                AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+                // AscendC::DumpTensor(tmpLt, 667, 16);
+
+                int32_t tarOffset = (i * numExperts * MAX_BS) + j * MAX_BS;
+                DataCopyPad(gExpertMaxBsSrcGT_[tarOffset], tmpLt, copyParams3);
+                if (i == 0) {
+                    AscendC::DumpTensor(gExpertMaxBsSrcGT_[tarOffset], 1025, 16);
+                }
+
+                AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
+            }
+        }
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        SyncFunc<AscendC::HardEvent::MTE3_S>();
+
+        /** 计算 srcOffsetRankTokenIdxOutputGT_ / dstOffsetRankTokenIdxOutputGT_
         *   shape[num_expert, num_rank, max_bs]  value: src_offset/dst_offset <--- shape[num_rank, num_expert, max_bs]
-        *   shape[max_bs * num_rank, expertNum]  value: dst_offset
         */
+        AscendC::SetFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        DataCopyExtParams copyParams4{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> padParams4{false, 0, 0, 0};
         int32_t dstOffsetStart = 0;
+        LocalTensor<int32_t> dstOffsetLt = tempBuf_.Get<int32_t>(); // 存立即数的buf
+
         for (int expId = 0; expId < numExperts; ++expId) {
             if (expId % localExpertNum == 0) {
                 dstOffsetStart = 0; // 每次所属rank递增后，计算desOffset的起始位置需要重置为0
             }
             for (int srcRank = 0; srcRank < rankSize; ++srcRank) {
-                int32_t validTokenCnt = epRankTokenCntOutputGT_.GetValue(expId * rankSize + srcRank);
+                DataCopyPad(tmpLt, epRankTokenCntOutputGT_[expId * rankSize + srcRank], copyParams4, padParams4); // 只拷贝一个数
+                SyncFunc<AscendC::HardEvent::MTE2_S>();
+                int32_t validTokenCnt = tmpLt(0);
+
                 for (int tokId = 0; tokId < MAX_BS; ++tokId) {
-                    int32_t outIdx = expId * rankSize * MAX_BS + srcRank * MAX_BS + tokId;
+                    event_t eventId = EVENT_ID0;
+                    AscendC::WaitFlag<HardEvent::MTE3_MTE2>(eventId);
+
                     int32_t inIdx = srcRank * numExperts * MAX_BS + expId * MAX_BS + tokId;
-                    int32_t srcOffset = gExpertMaxBsSrcGT_.GetValue(inIdx);
-                    int32_t out2Idx = (srcRank * MAX_BS + tokId) * numExperts + expId;
+                    DataCopyPad(tmpLt, gExpertMaxBsSrcGT_[inIdx], copyParams4, padParams4); // 只拷贝一个数
+                    SyncFunc<AscendC::HardEvent::MTE2_S>();
+                    int32_t srcOffset = tmpLt(0);
+                    pipe_barrier(PIPE_ALL);
 
-                    // 刷新gm
-                    __asm__ __volatile__("");
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(srcOffsetRankTokenIdxOutputGT_[outIdx]);
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(dstOffsetRankTokenIdxOutputGT_[outIdx]);
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(offsetInnerOutputGT_[out2Idx]);
-                    __asm__ __volatile__("");
-
-                    srcOffsetRankTokenIdxOutputGT_.SetValue(outIdx, srcOffset);
                     if (tokId < validTokenCnt) {
-                        dstOffsetRankTokenIdxOutputGT_.SetValue(outIdx, dstOffsetStart);
-                        offsetInnerOutputGT_.SetValue(out2Idx, dstOffsetStart);
+                        dstOffsetLt(0) = dstOffsetStart;
+                        pipe_barrier(PIPE_ALL);
                         dstOffsetStart++; // 有效token，写入当前rank的output目的偏移位置需要递增
                     } else {
-                        dstOffsetRankTokenIdxOutputGT_.SetValue(outIdx, -1);
-                        offsetInnerOutputGT_.SetValue(out2Idx, -1);
+                        dstOffsetLt(0) = -1;
+                        pipe_barrier(PIPE_ALL);
                     }
-                    // 刷新gm
-                    __asm__ __volatile__("");
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(srcOffsetRankTokenIdxOutputGT_[outIdx]);
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(dstOffsetRankTokenIdxOutputGT_[outIdx]);
-                    AscendC::DataCacheCleanAndInvalid<int32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(offsetInnerOutputGT_[out2Idx]);
-                    __asm__ __volatile__("");
+                    int32_t outIdx = expId * rankSize * MAX_BS + srcRank * MAX_BS + tokId;
+
+                    PRINTF("[BuildEpRankTokenCntAndSrcDstData4] rank:%d, blockIdx:%d, expId:%d, srcRank:%d, tokId:%d, \
+                        inIdx:%d, srcOffset:%d, validTokenCnt:%d, outIdx:%d, dstOffsetStart:%d\n",
+                        rank, blockIdx, expId, srcRank, tokId, inIdx, srcOffset, validTokenCnt, outIdx, dstOffsetStart);
+
+                    AscendC::SetFlag<HardEvent::MTE2_MTE3>(eventId);
+                    AscendC::WaitFlag<HardEvent::MTE2_MTE3>(eventId);
+                    // AscendC::DumpTensor(tmpLt, 667, 16);
+
+                    DataCopyPad(srcOffsetRankTokenIdxOutputGT_[outIdx], tmpLt, copyParams4);
+                    DataCopyPad(dstOffsetRankTokenIdxOutputGT_[outIdx], dstOffsetLt, copyParams4);
+                    // AscendC::DumpTensor(dstOffsetRankTokenIdxOutputGT_[outIdx], 671, 16);
+
+                    AscendC::SetFlag<HardEvent::MTE3_MTE2>(eventId);
                 }
             }
         }
+        AscendC::WaitFlag<HardEvent::MTE3_MTE2>(EVENT_ID0); // MTE2 waits for MTE3
+        SyncFunc<AscendC::HardEvent::MTE3_S>();
     }
 
     GlobalTensor<T> sendDataInputGt;
-    GlobalTensor<T> recvDataOutputGt;
     GlobalTensor<int> tokenPerExpertDataInputGt;
+    GlobalTensor<int> tmpDataInputGt;
     GlobalTensor<T> sendDataOffsetOutputGt;
+    GlobalTensor<T> recvDataOutputGt;
     GlobalTensor<T> readGt;
     GlobalTensor<T> writeGt;
     GlobalTensor<T> remoteGt;
 
     __gm__ T *sendDataInput;
     __gm__ int *tokenPerExpertDataInput;
+    __gm__ int *tmpDataInput;
     __gm__ T *sendDataOffsetOutput;
     __gm__ T *recvDataOutput;
 
@@ -965,10 +1097,10 @@ private:
     GlobalTensor<int32_t> srcOffsetRankTokenIdxOutputGT_; // 每个专家、从rank接收的token源端偏移 [expert_num, rank_num, token_idx] -> value:src_offset
     GlobalTensor<int32_t> dstOffsetRankTokenIdxOutputGT_;  // 每个专家、从rank接收的token目的端偏移 [expert_num, rank_num, token_idx] -> value:dst_offset
     GlobalTensor<int32_t> countInnerOutputGT_;  // token给各个server发送个数    弃用
-    GlobalTensor<int32_t> offsetInnerOutputGT_; // 以token-expert排布的dstoffset [globalBs, expertNum] -> value:dst_offset
+    GlobalTensor<int32_t> offsetInnerOutputGT_; // 存放全局的expandIdx, [globalBs, expertNum] 
     GlobalTensor<int32_t> countOuterOutputGT_; // 每个token发送到的server数量 [bs] -> value:server数量
     GlobalTensor<int32_t> offsetOuterOutputGT_; // 每个token在server上的位次    同tokenServerIdxOutputGT_
-    GlobalTensor<int32_t> expandIdxOutputGT_; // 给同一专家的token个数 [bs * topk], topk_idx的同专家前缀和
+    GlobalTensor<int32_t> expandIdxOutputGT_; // 给同一专家的token个数 [bs * numExperts], topk_idx的同专家前缀和扩维到所有专家维度
 
 };
 

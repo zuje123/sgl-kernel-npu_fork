@@ -36,7 +36,7 @@ extern "C" {
  * executor : executor context(output).
  */
 __attribute__((visibility("default"))) aclnnStatus aclnnNotifyDispatchA2GetWorkspaceSize(
-    const aclTensor *sendData, const aclTensor *tokenPerExpertData, int64_t sendCount, int64_t numTokens,
+    const aclTensor *sendData, const aclTensor *tokenPerExpertData, const aclTensor *tmpData, int64_t sendCount, int64_t numTokens,
     int64_t topkNum, int64_t numExperts, char *commGroup, int64_t rankSize, int64_t rankId, int64_t localRankSize, int64_t localRankId,
     const aclTensor *sendDataOffset, const aclTensor *recvData, const aclTensor *tokenServerIdx, 
     const aclTensor *tokenUniquePerServer, const aclTensor *epRankTokenCnt, const aclTensor *localEpTokenCnt, 

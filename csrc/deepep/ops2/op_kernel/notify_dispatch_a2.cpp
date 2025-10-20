@@ -13,7 +13,7 @@
 
 #define KERNEL_USE_WORKSPACE (1 * 1024 * 1024)
 
-extern "C" __global__ __aicore__ void notify_dispatch_a2(GM_ADDR sendData, GM_ADDR tokenPerExpertData,
+extern "C" __global__ __aicore__ void notify_dispatch_a2(GM_ADDR sendData, GM_ADDR tokenPerExpertData, GM_ADDR tmpData,
                                                       GM_ADDR sendDataOffset, GM_ADDR recvData, 
                                                       GM_ADDR tokenServerIdx, GM_ADDR tokensUniquePerServer,
                                                       GM_ADDR epRankTokenCnt, GM_ADDR localEpTokenCnt,
@@ -39,6 +39,8 @@ extern "C" __global__ __aicore__ void notify_dispatch_a2(GM_ADDR sendData, GM_AD
 
     GM_ADDR sendDataInput = sendData;
     GM_ADDR tokenPerExpertDataInput = tokenPerExpertData;
+    GM_ADDR tmpDataInput = tmpData;
+
     GM_ADDR sendDataOffsetOutput = sendDataOffset;
     GM_ADDR recvDataOutput = recvData;
     GM_ADDR tokenServerIdxOutput = tokenServerIdx;
