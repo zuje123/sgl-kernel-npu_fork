@@ -16,9 +16,9 @@ constexpr int PADDING_SIZE = 3;
 constexpr size_t HCOMM_NAME_LEN = 128;
 constexpr uint32_t NO_SCALES = 0;
 constexpr uint32_t DYNAMIC_SCALES = 2;
-constexpr uint32_t MAX_BS = 16U;
+constexpr uint32_t MAX_BS = 1024U;
 constexpr int A2_LOCAL_RANK_SIZE = 8;
-constexpr int A2_MAX_BATCH_SIZE = 16;
+constexpr int A2_MAX_BATCH_SIZE = 1024;
 constexpr int A2_EXPERT_DATA_SIZE = 1 + 2 * A2_MAX_BATCH_SIZE;  // 8193
 
 Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes, bool low_latency_mode,
@@ -94,10 +94,10 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     auto num_tokens_per_rank = at::zeros({num_ranks}, at::dtype(at::kInt).device(device));
     auto is_token_in_rank = torch::empty({num_tokens, num_ranks}, at::dtype(at::kInt).device(device));
     const int total_size =
-        num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_topk);
+        num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
     auto total_data = at::zeros({total_size}, at::dtype(at::kInt).device(device));
     total_data.index({at::indexing::Slice(num_experts + server_num + MAX_BS * (server_num + 1),
-                      num_experts + server_num + MAX_BS * (server_num * 2 + 1))}).fill_(-1);
+                      num_experts + server_num + MAX_BS * (server_num * 2 + num_experts + 1))}).fill_(-1);
 
     EXEC_NPU_CMD(aclnnDispatchLayout, new_topk_idx, num_tokens, num_ranks, num_experts, num_topk, local_ranksize,
                  num_tokens_per_rank, num_tokens_per_expert, is_token_in_rank, total_data);
@@ -199,19 +199,21 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
     int32_t server_num = num_ranks / local_rank_size;
 
     auto new_send_data = this->send_data;
-    int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + num_tokens * (1 + 2 * server_num + num_topk);
+    int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + num_tokens * (1 + 2 * server_num + num_experts);
+    std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
 
     auto send_data_offset = at::zeros({num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor tmp_data = at::zeros({send_count * num_ranks}, at::dtype(at::kInt).device(x.device())); // 给notify算子用来临时存数的空间
     at::Tensor recv_data = at::zeros({send_count * num_ranks}, at::dtype(at::kInt).device(x.device()));
     at::Tensor token_server_idx = at::zeros({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
     at::Tensor token_unique_per_server = at::zeros({server_num}, at::dtype(at::kInt).device(x.device()));
     at::Tensor ep_rank_token_cnt = at::zeros({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor local_ep_token_cnt = at::zeros({num_local_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor local_ep_token_cnt = at::ones({num_local_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
     at::Tensor src_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
     at::Tensor dst_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
     at::Tensor offset_inner = at::zeros({MAX_BS * num_ranks, num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor count_outer = at::zeros({MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    auto expand_idx = at::zeros({MAX_BS * num_topk}, at::dtype(at::kInt).device(x.device()));
+    auto expand_idx = at::zeros({MAX_BS * num_experts}, at::dtype(at::kInt).device(x.device()));
 
     // get ep name
     char hcom_ep_name[HCOMM_NAME_LEN];
@@ -228,6 +230,7 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
     EXEC_NPU_CMD(aclnnNotifyDispatchA2,
         new_send_data,
         new_num_tokens_per_expert,
+        tmp_data,
         send_count,
         num_tokens,
         num_topk,
@@ -374,6 +377,8 @@ Buffer::intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at
     int64_t global_bs = static_cast<int64_t>(MAX_BS * num_ranks);
 
     int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
+    std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
+
     bool use_quant = false;
     int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
     auto expandx_out = use_quant ? at::zeros({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))

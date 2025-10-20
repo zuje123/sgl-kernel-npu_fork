@@ -13,7 +13,7 @@
 namespace MoeDispatchLayoutA2 {
 
 constexpr uint32_t UB_32_ALIGN = 32U;
-constexpr uint32_t MAX_BATCH_SIZE = 16U;
+constexpr uint32_t MAX_BATCH_SIZE = 1024U;
 constexpr uint32_t TEMP_BATCH_SIZE = 8U;
 
 template <AscendC::HardEvent event>
@@ -105,7 +105,7 @@ public:
             sendTokenIdxGM_.SetGlobalBuffer((__gm__ T *)totalData + numExperts_ + serverNum_ +
                                             MAX_BATCH_SIZE * (1 + 2 * serverNum_));
             expertRankTokenIdxGM_.SetGlobalBuffer((__gm__ T *)totalData + numExperts_ + serverNum_ +
-                                                  MAX_BATCH_SIZE * (1 + 2 * serverNum_ + numTopk_));
+                                                  MAX_BATCH_SIZE * (1 + 2 * serverNum_ + numExperts_));
         }
     }
 
@@ -252,12 +252,12 @@ private:
                 expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, i);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
-                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numTopk_ + j]);
+                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numExperts_ + expert_id]);
                 __asm__ __volatile__("");
-                sendTokenIdxGM_.SetValue(i * numTopk_ + j, count);
+                sendTokenIdxGM_.SetValue(i * numExperts_ + expert_id, count);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
-                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numTopk_ + j]);
+                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numExperts_ + expert_id]);
                 __asm__ __volatile__("");
                 count++;
                 countExpertTensor.SetValue(expert_id, count);
