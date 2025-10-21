@@ -35,7 +35,7 @@ constexpr uint32_t EXTRA_TOKEN_INFO_NUM = 4U;  // 专家信息 权重信息 量�
 constexpr uint32_t BITS32_PER_BLOCK = 8U;
 constexpr static uint32_t BW_ITEM_SIZE = 32;
 constexpr uint32_t FLAG_VALUE = 0xFFFFFFFF;
-constexpr uint32_t BS_UPPER = 16;
+constexpr uint32_t BS_UPPER = 4096;
 
 #define TemplateMC2TypeA2layeredClass \
     typename XType, typename ExpandXOutType, bool StaticQuant, bool DynamicQuant, bool IsSmoothScaleExist
@@ -923,11 +923,13 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
     uint32_t curRankExpertStart = rankId_ * localMoeExpertNum_;               // 9*8=72
     uint32_t curRankExpertEnd = curRankExpertStart + localMoeExpertNum_ - 1;  // 72+8-1=79
 
-    // for (int i =0 ; i < serverNum; ++i) {
+    PRINTF("[Ipc2Out] blockIdx %d\n", aivId_);
+
+    // for (int i =0 ; i < 1; ++i) {
     //     GlobalTensor<uint8_t> srcIpcU; 
     //     srcIpcU.SetGlobalBuffer((__gm__ uint8_t *)(shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN);
         
-    //     for (int j = 0; j < 16; ++j) {
+    //     for (int j = 0; j < 4096; ++j) {
     //         GlobalTensor<int32_t> sendTokenU32;
     //         sendTokenU32.SetGlobalBuffer((__gm__ int32_t *)((shareAddrWins[rankId_]) + i * SERVER_SIZE_ON_WIN + j * tokenStructLen_ + TOKEN_COUNT_SIZE));
     //         AscendC::DumpTensor(sendTokenU32[(expOffsetInStruct_) / 4], 920, 32);
@@ -955,6 +957,8 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
         for (uint32_t recvExpId = curRankExpertStart; recvExpId <= curRankExpertEnd; ++recvExpId) {
             int recvTokenCnt = epRankTokenCntGMTensor_.GetValue(recvExpId * worldSize_ +
                                                                 srcRank);  // 专家recvExpId从srcRank收的token个数
+            PRINTF("[Ipc2Out] blockIdx:%d, recvTokenCnt:%d\n", aivId_, recvTokenCnt);
+            
             uint32_t beginIndex = 0;
             uint32_t endIndex = 0;
             // 分核处理token数量
@@ -1003,7 +1007,9 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 SyncFunc<AscendC::HardEvent::MTE2_S>();
                 int index = 100;
                 for (int j = 0; j < axisK_; j++) {
-                    // PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
+                    if (rankId_ == 0) {
+                        PRINTF("[Ipc2Out] rank:%d, aivId_:%d, topk:%d\n", rankId_, aivId_, expLt.GetValue(j));
+                    }
 
                     if (expLt.GetValue(j) == recvExpId) {
                         index = j;
@@ -1015,15 +1021,15 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
                 // weight to output
                 LocalTensor<float> weightLt = localUB[weightOffsetInStruct_].ReinterpretCast<float>();
                 float weightVal = weightLt.GetValue(index);
-                // if (index == 100) {
-                //     AscendC::DumpTensor(weightLt, 1016, 32);
-                // }
-
-                PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, \
-                    localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, \
-                    i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d, tokenLt:%d\n", 
-                    rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
-                    tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index, tokenLt(0));
+                if (index == 100) {
+                    AscendC::DumpTensor(weightLt, 1016, 32);
+                }
+                float target = (float)1.0;
+                if (weightVal != target) {
+                    PRINTF("[Ipc2Out] rank:%d, aivId_:%d, curRankExpertStart:%d, curRankExpertEnd:%d, localRankIdx:%d, curServerIdx:%d, targetRankId:%d, tarServerBlockIdx:%d, recvTokenCnt:%d, i:%d, recvExpId:%d, srcRank:%d, srcOffset:%d, dstOffset:%d, tokenOffset:%d, weightVal:%f, index:%d, tokenLt:%d\n", 
+                        rankId_, aivId_, curRankExpertStart, curRankExpertEnd, localRankIdx, curServerIdx, targetRankId,
+                        tarServerBlockIdx, recvTokenCnt, i, recvExpId, srcRank, srcOffset, dstOffset, tokenOffset, weightVal, index, tokenLt(0));
+                }
 
                 // weightLt(0) = weightVal;
                 // AscendC::DumpTensor(weightsOutGt, 1019, 148);

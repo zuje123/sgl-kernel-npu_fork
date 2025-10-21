@@ -20,7 +20,8 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
 
     # Random data
     scores = torch.randn((num_tokens, num_experts), dtype=torch.float32, device='npu').abs() + 1
-    topk_idx = torch.topk(scores, num_topk, dim=-1, largest=True, sorted=False)[1]
+    # topk_idx = torch.topk(scores, num_topk, dim=-1, largest=True, sorted=False)[1]
+    topk_idx = torch.arange(8, device='npu').repeat(num_tokens, 1)
 
     rank_idx = topk_idx // (num_experts // num_ranks)
     rank_idx.masked_fill_(topk_idx == -1, -1)
@@ -88,8 +89,8 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     topk_weights_pure_rand = torch.randn((num_tokens, num_topk), dtype=torch.float32, device='npu')
 
     torch.set_printoptions(threshold=float('inf'))
-    print(f'{rank=}, {topk_idx=}\n')
-    print(f'{rank=}, {topk_weights=}\n')
+    # print(f'{rank=}, {topk_idx=}\n')
+    # print(f'{rank=}, {topk_weights=}\n')
     print('', flush=True)
 
     if local_rank == 0:
@@ -137,13 +138,38 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     # expand_idx = param["expand_idx"]
 
     
-    print(f'{rank=}, {token_server_idx=}\n')
-    print(f'{rank=}, {token_unique_per_server=}\n')
-    print(f'{rank=}, {ep_rank_token_cnt=}\n')
+
     if local_rank == 0:
+        filename = f"src_offset_{rank}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f'{rank=}, {src_offset_rank_token_idx=}\n')
+        filename = f"dst_offset_{rank}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f'{rank=}, {dst_offset_rank_token_idx=}\n')
+
+    if local_rank == 0:
+        filename = f"send_data_{rank}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f'{rank=}, {send_data=}\n')
+        # print(f'{rank=}, {send_data=}\n')
         filename2 = f"recv_data_{rank}.txt"
         with open(filename2, 'w', encoding='utf-8') as f:
             f.write(f'{rank=}, {recv_data=}\n')
+        # print(f'{recv_data=}\n')
+
+    if local_rank == 0:
+        filename = f"notify_data_{rank}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(f'{rank=}, {num_tokens_per_expert=}\n')
+            f.write(f'{rank=}, {token_server_idx=}\n')
+            f.write(f'{rank=}, {token_unique_per_server=}\n')
+            f.write(f'{rank=}, {ep_rank_token_cnt=}\n')
+            f.write(f'{rank=}, {local_ep_token_cnt=}\n')
+            f.write(f'{rank=}, {offset_inner=}\n')
+            f.write(f'{rank=}, {count_outer=}\n')
+            f.write(f'{rank=}, {expand_idx=}\n')
+            # f.write(f'{rank=}, {topk_weights=}\n')
+
 
     normal_dispatch_args = {
         'x': x,
@@ -159,27 +185,13 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         'config': config,
     }
     expandx_out, dynamic_scales_out, expand_scales = buffer.normal_dispatch_a2(**normal_dispatch_args)
+    torch.npu.synchronize()
     dist.barrier()
-
-
-    # filename = f"send_data_{rank}.txt"
-    # with open(filename, 'w', encoding='utf-8') as f:
-    #     f.write(f'{rank=}, {send_data=}\n')
-    # print(f'{rank=}, {send_data=}\n')
-    if local_rank == 0:
-        filename2 = f"recv_data_{rank}.txt"
-        with open(filename2, 'w', encoding='utf-8') as f:
-            f.write(f'{rank=}, {recv_data=}\n')
-        # print(f'{recv_data=}\n')
-        print(f'{local_ep_token_cnt=}\n')
-        print(f'{src_offset_rank_token_idx=}\n')
-        print(f'{dst_offset_rank_token_idx=}\n')
-        print(f'{offset_inner=}\n')
-        print(f'{count_outer=}\n')
-        print(f'{expand_idx=}\n')
-        print(f'{topk_weights=}\n')
-    print(f'{rank=}, {num_tokens_per_expert=}\n')
+    
     print(f'{rank=}, {expand_scales=}\n')
+    print(f'{rank=}, expandx_out: {expandx_out.shape}, {expandx_out[:,0]}\n')
+
+    return
 
     # Test combine
     expert_idx = torch.zeros((num_tokens, num_experts), dtype=torch.int, device='npu')
@@ -189,7 +201,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
         None,
         expert_idx,
         None,
-        local_ep_token_cnt,
+        ep_rank_token_cnt,
         offset_inner,
         token_server_idx,
         count_outer,
@@ -199,6 +211,7 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     ]
     combine_args = {'x': expandx_out, 'handle': handle, 'config': None, 'async_finish': False, 'topk_weights': topk_weights}
     combined_x, combined_topk_weights, event = buffer.combine_a2(**combine_args)
+    torch.npu.synchronize()
     dist.barrier()
     filename = f"output_data_{rank}.txt"
     with open(filename, 'w', encoding='utf-8') as f:
@@ -209,6 +222,20 @@ def test_main(args: argparse.Namespace, local_rank: int, num_ranks: int, rank: i
     print('combined_x', rank)
     print('', flush=True)
     time.sleep(1)
+
+    check_x = combined_x.float()
+
+    filename = f"output_data_{rank}.txt"
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(f'{rank=}, {topk_idx=}\n')
+        f.write(f'{rank=}, {expand_scales=}\n')
+        f.write(f'{rank=}, expandx_out: {expandx_out.shape}, {expandx_out[:,0]}\n')
+        f.write(f'{rank=}, combined_x: {combined_x.shape}, {combined_x[:,0]}\n')
+
+    # assert (calc_diff(
+    #     check_x,
+    #     x * num_topk
+    # ) < 5e-5)
 
 
 # noinspection PyUnboundLocalVariable,PyShadowingNames

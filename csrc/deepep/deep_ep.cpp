@@ -16,9 +16,9 @@ constexpr int PADDING_SIZE = 3;
 constexpr size_t HCOMM_NAME_LEN = 128;
 constexpr uint32_t NO_SCALES = 0;
 constexpr uint32_t DYNAMIC_SCALES = 2;
-constexpr uint32_t MAX_BS = 1024U;
+constexpr uint32_t MAX_BS = 4096;
 constexpr int A2_LOCAL_RANK_SIZE = 8;
-constexpr int A2_MAX_BATCH_SIZE = 1024;
+constexpr int A2_MAX_BATCH_SIZE = 4096;
 constexpr int A2_EXPERT_DATA_SIZE = 1 + 2 * A2_MAX_BATCH_SIZE;  // 8193
 
 Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes, bool low_latency_mode,
@@ -107,9 +107,9 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     std::optional<EventHandle> output_event = std::nullopt;
     auto is_token_in_rank_bool = is_token_in_rank.to(at::kBool);
 
-    std::ostringstream oss;
-    oss << " \n layout send_data: \n" << total_data.cpu() << "\n";
-    log(oss.str(), rank);
+    // std::ostringstream oss;
+    // oss << " \n layout send_data: \n" << total_data.cpu() << "\n";
+    // log(oss.str(), rank);
 
     return std::make_tuple(num_tokens_per_rank, num_tokens_per_rdma_rank, num_tokens_per_expert, is_token_in_rank_bool,
                            output_event);
@@ -202,18 +202,18 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
     int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + num_tokens * (1 + 2 * server_num + num_experts);
     std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
 
-    auto send_data_offset = at::zeros({num_experts}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor tmp_data = at::zeros({send_count * num_ranks}, at::dtype(at::kInt).device(x.device())); // 给notify算子用来临时存数的空间
-    at::Tensor recv_data = at::zeros({send_count * num_ranks}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor token_server_idx = at::zeros({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor token_unique_per_server = at::zeros({server_num}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor ep_rank_token_cnt = at::zeros({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor local_ep_token_cnt = at::ones({num_local_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor src_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor dst_offset_rank_token_idx = at::zeros({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor offset_inner = at::zeros({MAX_BS * num_ranks, num_experts}, at::dtype(at::kInt).device(x.device()));
-    at::Tensor count_outer = at::zeros({MAX_BS}, at::dtype(at::kInt).device(x.device()));
-    auto expand_idx = at::zeros({MAX_BS * num_experts}, at::dtype(at::kInt).device(x.device()));
+    auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor tmp_data = at::empty({send_count * num_ranks}, at::dtype(at::kInt).device(x.device())); // 给notify算子用来临时存数的空间
+    at::Tensor recv_data = at::empty({send_count * num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor token_server_idx = at::empty({MAX_BS, server_num}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor token_unique_per_server = at::empty({server_num}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor ep_rank_token_cnt = at::empty({num_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor local_ep_token_cnt = at::empty({num_local_experts, num_ranks}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor src_offset_rank_token_idx = at::empty({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor dst_offset_rank_token_idx = at::empty({num_experts, num_ranks, MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor offset_inner = at::empty({num_ranks, MAX_BS, num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor count_outer = at::empty({MAX_BS}, at::dtype(at::kInt).device(x.device()));
+    auto expand_idx = at::empty({MAX_BS, num_experts}, at::dtype(at::kInt).device(x.device()));
 
     // get ep name
     char hcom_ep_name[HCOMM_NAME_LEN];

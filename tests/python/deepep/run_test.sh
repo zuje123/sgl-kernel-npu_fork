@@ -1,4 +1,4 @@
-SKN_PWD="/home/l00679719/sgl-kernel-npu"
+SKN_PWD="/home/z00799692/code/1019/sgl-kernel-npu_a2"
 RANK0_IP="141.61.41.73"
 IP=$(hostname -I | awk '{print $1}')
 cd ${SKN_PWD}
@@ -17,7 +17,7 @@ export HCCL_INTRA_PCIE_ENABLE=1
 export HCCL_INTRA_ROCE_ENABLE=0
 rm -rf ./logs
 export ASCEND_PROCESS_LOG_PATH=./logs
-export ASCEND_GLOBAL_LOG_LEVEL=0
+export ASCEND_GLOBAL_LOG_LEVEL=3
 
 export MASTER_ADDR=${RANK0_IP}
 if [ "${IP}" == "${RANK0_IP}" ]; then

@@ -13,7 +13,7 @@
 namespace MoeDispatchLayoutA2 {
 
 constexpr uint32_t UB_32_ALIGN = 32U;
-constexpr uint32_t MAX_BATCH_SIZE = 1024U;
+constexpr uint32_t MAX_BATCH_SIZE = 4096U;
 constexpr uint32_t TEMP_BATCH_SIZE = 8U;
 
 template <AscendC::HardEvent event>
