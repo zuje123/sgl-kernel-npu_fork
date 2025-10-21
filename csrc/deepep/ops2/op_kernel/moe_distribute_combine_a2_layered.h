@@ -437,7 +437,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 {
     // 当前假设一个core处理一个rank的数据累加，因为已经只剩下同号卡，所以只有serverNum个rank
     if (coreIdx_ < serverNum) {
-        countReL = MAX_BS;
+        countReL = 0;
         shareFlagGlobal_.SetGlobalBuffer((__gm__ int64_t *)shareAddreRank[rankId_ % SERVER_RANK_SIZE]);
         LocalTensor<int64_t> InUb = statusBuf_.AllocTensor<int64_t>();
         for (uint32_t i = 0U; i < SERVER_RANK_SIZE; i++) {
@@ -478,12 +478,14 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         sumFloatLocal_ = sumFloatBuf_.Get<float>();
         offsetIndex = 0U;
         for (uint32_t i = 0U; i < MAX_BS; i++) {
+            bool isTokenInServer = false;
             Duplicate(sumFloatLocal_, 0.0f, axisH_);
             for (uint32_t j = 0U; j < static_cast<uint32_t>(localMoeExpertNum_ * SERVER_RANK_SIZE); j++) {
                 int32_t expId = j + rankId_ * localMoeExpertNum_;
                 int32_t offsetValue = offsetReduceGt.GetValue(i * moeExpertNum_ + expId);
                 if (offsetValue == -1)
                     continue;
+                isTokenInServer = true;
                 tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
                 uint32_t offsetOnIpc = (offsetValue * (axisH_ + 16U) * sizeof(ExpandXType)) / sizeof(ExpandXType);
                 // uint32_t offsetOnIpc = (offsetValue / (MAX_BS) * ipcSliceSize +
@@ -512,11 +514,15 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                     offsetIndex);
             }
             PipeBarrier<PIPE_V>();
+            if (!isTokenInServer) {
+                continue;
+            }
             LocalTensor<ExpandXType> castUbIn = mulBuf_.Get<ExpandXType>();
             SyncFunc<AscendC::HardEvent::MTE3_V>();
             Cast(castUbIn, sumFloatLocal_, AscendC::RoundMode::CAST_RINT, axisH_);
             SyncFunc<AscendC::HardEvent::V_MTE3>();
-            DataCopy(localOutWindow_[i * axisH_], castUbIn, axisH_);
+            DataCopy(localOutWindow_[countReL * axisH_], castUbIn, axisH_);
+            countReL++;
             PipeBarrier<PIPE_V>();
         }
     }
@@ -674,7 +680,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         SyncAll<true>();
         return;
     }
-    uint32_t count = 0;
+    uint32_t count = startBs;
     for (uint32_t i = startBs; i < endBs; i++) {
         // int offsetPre = 0;
         // int offsetCur = countOuterGlobal_.GetValue(i);
@@ -693,7 +699,11 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
             if (cntOuter == -1) {
                 continue;
             }
+            flag = 1;
             int offsetOnIpc = (cntOuter * axisH_ * sizeof(ExpandXType)) / sizeof(ExpandXType);
+            uint64_t selfRankAddr = (uint64_t)(hccl_.GetWindowsInAddr(rankId_) + halfWinSize_ * bufferId_ +
+                                               j * rankSizeOnWin_ * SERVER_RANK_SIZE);
+            localInWindow_.SetGlobalBuffer((__gm__ ExpandXType *)(selfRankAddr));
             DataCopy(tmpUb_, localInWindow_[offsetOnIpc], axisH_);
             moeSumQueue_.EnQue(tmpUb_);
             LocalTensor<ExpandXType> tmpOtherUb_ = moeSumQueue_.DeQue<ExpandXType>();
@@ -703,17 +713,17 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
             // add mulBufLocal to sumFloatBufLocal
             AscendC::Add(sumFloatLocal_, sumFloatLocal_, rowTmpFloatLocal_, axisH_);
             moeSumQueue_.FreeTensor<ExpandXType>(tmpOtherUb_);
-            flag = 1;
         }
         PipeBarrier<PIPE_V>();
+        if (!flag) {
+            continue;
+        }
         LocalTensor<ExpandXType> castUbIn = mulBuf_.Get<ExpandXType>();
         SyncFunc<AscendC::HardEvent::MTE3_V>();
         Cast(castUbIn, sumFloatLocal_, AscendC::RoundMode::CAST_RINT, axisH_);
         SyncFunc<AscendC::HardEvent::V_MTE3>();
-        if (flag) {
-            DataCopy(expandOutGlobal_[count * axisH_], castUbIn, axisH_);
-            count++;
-        }
+        DataCopy(expandOutGlobal_[count * axisH_], castUbIn, axisH_);
+        count++;
         PipeBarrier<PIPE_V>();
     }
 
@@ -726,19 +736,19 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     printf("step0\n");
     if ASCEND_IS_AIV {
         printf("step1\n");
-        AlltoAllDispatch();
+        AlltoAllDispatch();  // 所有核执行
         printf("step2\n");
-        SumToWindow();
+        SumToWindow();  // 前serverNum个核执行
         printf("step3\n");
-        AlltoAllServerDispatch();
+        AlltoAllServerDispatch();  // 前serverNum个核执行
         printf("step4\n");
-        SetStatus();
+        SetStatus();  // 0核执行
         printf("step5\n");
-        Preload();
+        Preload();  // 前8核执行
         printf("step6\n");
-        WaitDispatch();
+        WaitDispatch();  // 前serverNum个核执行
         printf("step7\n");
-        SumToServer();
+        SumToServer();  // 前8核执行
         printf("step8\n");
         hccl_.Finalize();
         printf("step9\n");
