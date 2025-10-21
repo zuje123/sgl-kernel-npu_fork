@@ -262,15 +262,15 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     axisHFloatSize_ = axisH_ * static_cast<uint32_t>(sizeof(float));
     axisHExpandXTypeSize_ = axisH_ * static_cast<uint32_t>(sizeof(ExpandXType));
 
-    uint64_t winSizeMin = moeExpertNum_ * axisBS_ * (axisHExpandXTypeSize_ + EXTRA_TOKEN_INFO_NUM * axisK_ * sizeof(uint32_t)) + 
+    uint64_t winSizeMin = moeExpertNum_ * axisBS_ * (axisHExpandXTypeSize_ + EXTRA_TOKEN_INFO_NUM * axisK_ * sizeof(uint32_t)) +
         IPC_DATA_OFFSET + RDMA_DATA_SIZE; // 考虑负载极其不均衡时，HCCL BUFFSIZE需要开的大小
     assert(winContext_->winSize >= winSizeMin, "The HCCL_BUFFSIZE is %lluMB, the min value should be %lluMB. \
         epWorldSize:%u, epRankId:%u, moeExpertNum:%u, globalBs:%u, bs:%u, k:%u, h:%u, aivNum:%u, \
-        totalUbSize:%llu, hcclBufferSize:%u\n", 
-        winContext_->winSize / MB_SIZE, winSizeMin / MB_SIZE, 
-        tilingData->moeDistributeCombineInfo.epWorldSize, tilingData->moeDistributeCombineInfo.epRankId, tilingData->moeDistributeCombineInfo.moeExpertNum, 
-        tilingData->moeDistributeCombineInfo.globalBs, tilingData->moeDistributeCombineInfo.bs, tilingData->moeDistributeCombineInfo.k, 
-        tilingData->moeDistributeCombineInfo.h, tilingData->moeDistributeCombineInfo.aivNum, tilingData->moeDistributeCombineInfo.totalUbSize, 
+        totalUbSize:%llu, hcclBufferSize:%u\n",
+        winContext_->winSize / MB_SIZE, winSizeMin / MB_SIZE,
+        tilingData->moeDistributeCombineInfo.epWorldSize, tilingData->moeDistributeCombineInfo.epRankId, tilingData->moeDistributeCombineInfo.moeExpertNum,
+        tilingData->moeDistributeCombineInfo.globalBs, tilingData->moeDistributeCombineInfo.bs, tilingData->moeDistributeCombineInfo.k,
+        tilingData->moeDistributeCombineInfo.h, tilingData->moeDistributeCombineInfo.aivNum, tilingData->moeDistributeCombineInfo.totalUbSize,
         tilingData->moeDistributeCombineInfo.hcclBufferSize
     );
 
@@ -371,8 +371,8 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         uint32_t targetRank = dstRankId % SERVER_RANK_SIZE;
         // 计算要发往的目标IPC的地址，不考虑flag偏移
         uint64_t targetRankShareAddr = shareAddreRank[targetRank];
-        uint64_t targetRankAddr = targetRankShareAddr + static_cast<uint64_t>(dstRankId / SERVER_RANK_SIZE * ipcSliceNodeSize + 
-                                                                              rankId_ % SERVER_RANK_SIZE * ipcSliceSize + 
+        uint64_t targetRankAddr = targetRankShareAddr + static_cast<uint64_t>(dstRankId / SERVER_RANK_SIZE * ipcSliceNodeSize +
+                                                                              rankId_ % SERVER_RANK_SIZE * ipcSliceSize +
                                                                               IPC_DATA_OFFSET);
 
         dstshareMemGlobal_.SetGlobalBuffer((__gm__ ExpandXType *)(targetRankAddr));
@@ -454,7 +454,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         SyncFunc<AscendC::HardEvent::MTE2_S>();
         AscendC::DumpTensor(offsetReduceGt, 452, 128);
 
-        uint64_t copyAddr = shareAddreRank[rankId_ % SERVER_RANK_SIZE] + 
+        uint64_t copyAddr = shareAddreRank[rankId_ % SERVER_RANK_SIZE] +
                             static_cast<uint64_t>(IPC_DATA_OFFSET + coreIdx_ * ipcSliceNodeSize);
         shareMemGlobal_.SetGlobalBuffer((__gm__ ExpandXType *)copyAddr);
         uint64_t rdmaAddr = (uint64_t)(hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_ +
@@ -626,8 +626,8 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     if (coreIdx_ >= 8U) {
         return;
     }
-    processNum = axisBS_ / 8U;
-    resNum = axisBS_ - processNum * 8U;
+    processNum = MAX_BS / 8U;
+    resNum = MAX_BS - processNum * 8U;
     resLen = (resNum == 0U) ? 0U : 1U;
     startBs = 0U;
     endBs = 0U;
@@ -661,8 +661,9 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         SyncAll<true>();
         return;
     }
+    uint32_t count = 0;
     for (uint32_t i = startBs; i < endBs; i++) {
-        int offsetPre = 0;
+        // int offsetPre = 0;
         // int offsetCur = countOuterGlobal_.GetValue(i);
         // if (i != 0U) {
         //     offsetPre = countOuterGlobal_.GetValue(i - 1);
@@ -671,10 +672,11 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         // if (!copyNum) {
         //     break;
         // }
+        int flag = 0;
         Duplicate(sumFloatLocal_, 0.0f, axisH_);
         for (int j = 0; j < serverNum; j++) {
             tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
-            int cntOuter = offsetOuterGlobal_.GetValue(offsetIndex);
+            int cntOuter = offsetOuterGlobal_.GetValue(i * serverNum + j);
             if (cntOuter == -1) {
                 continue;
             }
@@ -688,14 +690,17 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
             // add mulBufLocal to sumFloatBufLocal
             AscendC::Add(sumFloatLocal_, sumFloatLocal_, rowTmpFloatLocal_, axisH_);
             moeSumQueue_.FreeTensor<ExpandXType>(tmpOtherUb_);
-            offsetIndex++;
+            flag = 1;
         }
         PipeBarrier<PIPE_V>();
         LocalTensor<ExpandXType> castUbIn = mulBuf_.Get<ExpandXType>();
         SyncFunc<AscendC::HardEvent::MTE3_V>();
         Cast(castUbIn, sumFloatLocal_, AscendC::RoundMode::CAST_RINT, axisH_);
         SyncFunc<AscendC::HardEvent::V_MTE3>();
-        DataCopy(expandOutGlobal_[i * axisH_], castUbIn, axisH_);
+        if (flag) {
+            DataCopy(expandOutGlobal_[count * axisH_], castUbIn, axisH_);
+            count++;
+        }
         PipeBarrier<PIPE_V>();
     }
 
