@@ -312,8 +312,8 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 //    offsetOuterGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(sendCount) + offset_outer_offset);
 //    countOuterGlobal_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(sendCount) + send_counts_outer_offset);
 
-    LocalTensor<ExpandIdxType> sendCountLocal = sendCountBuf_.Get<int32_t>();
-    DataCopy(sendCountLocal, shareAddrGlobal_, RoundUp(SERVER_RANK_SIZE * 2, B32_PER_BLOCK));  // 16
+    // LocalTensor<ExpandIdxType> sendCountLocal = sendCountBuf_.Get<int32_t>();
+    // DataCopy(sendCountLocal, shareAddrGlobal_, RoundUp(SERVER_RANK_SIZE * 2, B32_PER_BLOCK));  // 16
     PipeBarrier<PIPE_ALL>();
     for (int i = 0; i < 8; i++) {
         shareAddreRank[i] = reinterpret_cast<uint64_t>(
@@ -330,7 +330,8 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     tpipe_->InitBuffer(rowTmpFloatBuf_, axisHFloatSize_);
     tpipe_->InitBuffer(mulBuf_, axisHFloatSize_);       //  // 7168 * 4 = 28672
     tpipe_->InitBuffer(sumFloatBuf_, axisHFloatSize_);  //  // 7168 * 4 = 28672
-    tpipe_->InitBuffer(sendCountBuf_, RoundUp(moeExpertNum_, B32_PER_BLOCK) * sizeof(int32_t));  // 保存累计出现次数，用于计算windows中的偏移
+    tpipe_->InitBuffer(sendCountBuf_, RoundUp(moeExpertNum_ * worldSize_, B32_PER_BLOCK) *
+                                          sizeof(int32_t));  // 全局sendCount，为每个专家从不同rank接收的token个数
     tpipe_->InitBuffer(moeSumQueue_, BUFFER_NUM, (axisHExpandXTypeSize_ + 32U));
     tpipe_->InitBuffer(statusSumOutBuf_, sizeof(float));
     tpipe_->InitBuffer(batchWriteItemBuf_, BATCH_WRITE_ITEM_SIZE * worldSize_);
@@ -363,7 +364,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
     ipcSliceNodeSize = ipcSliceSize * SERVER_RANK_SIZE;
     LocalTensor<ExpandIdxType> sendCountLocal = sendCountBuf_.Get<int32_t>();
     // expandScalesLocal_ = scaleBuf_.Get<float>();
-    DataCopy(sendCountLocal, sendCountGlobal_, RoundUp(moeExpertNum_, B32_PER_BLOCK));
+    DataCopy(sendCountLocal, sendCountGlobal_, RoundUp(moeExpertNum_ * worldSize_, B32_PER_BLOCK));
     SyncFunc<AscendC::HardEvent::MTE2_S>();
     AscendC::DumpTensor(sendCountLocal, 368, 32);
     for (uint32_t dstRankId = startRankId_; dstRankId < endRankId_; ++dstRankId) {
@@ -371,27 +372,40 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         uint32_t targetRank = dstRankId % SERVER_RANK_SIZE;
         // 计算要发往的目标IPC的地址，不考虑flag偏移
         uint64_t targetRankShareAddr = shareAddreRank[targetRank];
-        uint64_t targetRankAddr = targetRankShareAddr + static_cast<uint64_t>(dstRankId / SERVER_RANK_SIZE * ipcSliceNodeSize +
-                                                                              rankId_ % SERVER_RANK_SIZE * ipcSliceSize +
-                                                                              IPC_DATA_OFFSET);
+        uint64_t targetRankAddr =
+            targetRankShareAddr +
+            static_cast<uint64_t>(dstRankId / SERVER_RANK_SIZE * ipcSliceNodeSize + IPC_DATA_OFFSET);
 
         dstshareMemGlobal_.SetGlobalBuffer((__gm__ ExpandXType *)(targetRankAddr));
         shareFlagGlobal_.SetGlobalBuffer((__gm__ int64_t *)targetRankShareAddr);
         // 计算要发送的token数量
         uint32_t rankTokenNum = 0U;
-
         for (uint32_t expertId = 0U; expertId < localMoeExpertNum_; ++expertId) {
             uint32_t preCount = 0U;
             if (expertId != 0U || dstRankId != 0U) {
-                preCount = static_cast<uint32_t>(sendCountLocal.GetValue(expertId * worldSize_ + dstRankId - 1));
+                for (int i = 0; i < expertId; i++) {
+                    for (int j = 0; j < worldSize_; j++) {
+                        if ((i == expertId - 1) && j >= dstRankId) {
+                            break;
+                        }
+                        preCount += sendCountLocal.GetValue(i * worldSize_ + j); // 对epSendCount的前expertId - 1的行求和，和第expertId行的前dstRankId - 1求和
+                    }
+                }
+                // preCount = static_cast<uint32_t>(sendCountLocal.GetValue(expertId * worldSize_ + dstRankId - 1)); // expertId专家从dstRankId收到的token在output上的偏移
             }
 
-            uint32_t tokenNum = sendCountLocal.GetValue(expertId * worldSize_ + dstRankId) - preCount;
+            uint32_t tokenNum = sendCountLocal.GetValue(expertId * worldSize_ + dstRankId);
             uint32_t startTokenAddr = preCount * axisH_;
             PRINTF("[AlltoAllDispatch] rank:%d, coreIdx_:%d, expertId:%d, dstRankId:%d, targetRank:%d, tokenNum:%d, preCount:%d\n",
                 rankId_, coreIdx_, expertId, dstRankId, targetRank, tokenNum, preCount);
             // DataCopy(expandScalesLocal_, expandScalesGlobal_[preCount], (tokenNum + 31) / 32 * 32);
             SyncFunc<AscendC::HardEvent::MTE2_S>();
+            uint32_t tokenOffset = 0;
+            uint32_t serverStartExpId = rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE * localMoeExpertNum_;
+            // 从本server的专家起始id到当前expertId
+            for (int i = serverStartExpId; i < rankId_ * localMoeExpertNum_ + expertId; i++) {
+                tokenOffset += sendCountLocal.GetValue(i * worldSize_ + dstRankId);
+            }
             for (uint32_t tokenId = 0U; tokenId < tokenNum; ++tokenId) {
                 float scaleVal = expandScalesGlobal_[preCount].GetValue(tokenId);
                 LocalTensor<ExpandXType> InUb = moeQueue_.AllocTensor<ExpandXType>();
@@ -401,7 +415,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 DataCopy(InUb, expandXGlobal_[startTokenAddr], axisH_);
                 moeQueue_.EnQue(InUb);
                 LocalTensor<ExpandXType> OutUb = moeQueue_.DeQue<ExpandXType>();
-                DataCopy(dstshareMemGlobal_[rankTokenNum * (axisH_ + 16U)], OutUb, axisH_ + 16U);
+                DataCopy(dstshareMemGlobal_[(tokenOffset + tokenId) * (axisH_ + 16U)], OutUb, axisH_ + 16U);
                 moeQueue_.FreeTensor<ExpandXType>(OutUb);
                 startTokenAddr += axisH_;
                 rankTokenNum++;
@@ -423,6 +437,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
 {
     // 当前假设一个core处理一个rank的数据累加，因为已经只剩下同号卡，所以只有serverNum个rank
     if (coreIdx_ < serverNum) {
+        countReL = MAX_BS;
         shareFlagGlobal_.SetGlobalBuffer((__gm__ int64_t *)shareAddreRank[rankId_ % SERVER_RANK_SIZE]);
         LocalTensor<int64_t> InUb = statusBuf_.AllocTensor<int64_t>();
         for (uint32_t i = 0U; i < SERVER_RANK_SIZE; i++) {
@@ -470,9 +485,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 if (offsetValue == -1)
                     continue;
                 tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
-                uint32_t offsetOnIpc = (j / localMoeExpertNum_ * ipcSliceSize +
-                                        offsetValue * (axisH_ + 16U) * sizeof(ExpandXType)) /
-                                       sizeof(ExpandXType);
+                uint32_t offsetOnIpc = (offsetValue * (axisH_ + 16U) * sizeof(ExpandXType)) / sizeof(ExpandXType);
                 // uint32_t offsetOnIpc = (offsetValue / (MAX_BS) * ipcSliceSize +
                 //         offsetValue % (MAX_BS) * (axisH_ + 16U) *
                 //         sizeof(ExpandXType)) / sizeof(ExpandXType);
