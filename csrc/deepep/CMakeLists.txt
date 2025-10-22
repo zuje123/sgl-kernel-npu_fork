@@ -27,6 +27,7 @@ target_include_directories( deep_ep_cpp PRIVATE
     ${TORCH_NPU_DIR}/include/third_party/acl/inc/acl
     ${TORCH_NPU_DIR}/include/third_party/acl/inc
     ${ASCEND_HOME_PATH}/include
+    ${ASCEND_HOME_PATH}/aarch64-linux/include/experiment/platform
 )
 target_link_directories(deep_ep_cpp PRIVATE
         ${TORCH_DIR}/lib
@@ -38,6 +39,7 @@ target_link_libraries(deep_ep_cpp PRIVATE
     ascendcl
     hccl
     torch_npu
+    opapi
 )
 
 message(STATUS "TARGET_INSTALL_DIR = ${TARGET_INSTALL_DIR}")
