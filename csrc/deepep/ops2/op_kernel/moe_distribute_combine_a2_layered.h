@@ -694,11 +694,11 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         int flag = 0;
         Duplicate(sumFloatLocal_, 0.0f, axisH_);
         for (int j = 0; j < serverNum; j++) {
-            tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
             int cntOuter = offsetOuterGlobal_.GetValue(i * serverNum + j);
             if (cntOuter == -1) {
                 continue;
             }
+            tmpUb_ = moeSumQueue_.AllocTensor<ExpandXType>();
             flag = 1;
             int offsetOnIpc = (cntOuter * axisH_ * sizeof(ExpandXType)) / sizeof(ExpandXType);
             uint64_t selfRankAddr = (uint64_t)(hccl_.GetWindowsInAddr(rankId_) + halfWinSize_ * bufferId_ +
