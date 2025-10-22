@@ -1,4 +1,4 @@
-SKN_PWD="/home/z00799692/code/1019/sgl-kernel-npu_a2"
+SKN_PWD="/home/z00799692/code/1022/sgl-kernel-npu_a2"
 RANK0_IP="141.61.41.73"
 IP=$(hostname -I | awk '{print $1}')
 cd ${SKN_PWD}
@@ -28,4 +28,4 @@ else
   export RANK=1
 fi
 
-python a2_test_intranode.py
+python a2_test_internode.py
