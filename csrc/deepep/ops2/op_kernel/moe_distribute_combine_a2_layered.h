@@ -380,15 +380,17 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         shareFlagGlobal_.SetGlobalBuffer((__gm__ int64_t *)targetRankShareAddr);
         // 计算要发送的token数量
         uint32_t rankTokenNum = 0U;
+        uint32_t serverStartExpId = rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE * localMoeExpertNum_;
         for (uint32_t expertId = 0U; expertId < localMoeExpertNum_; ++expertId) {
             uint32_t preCount = 0U;
             if (expertId != 0U || dstRankId != 0U) {
-                for (int i = 0; i < expertId; i++) {
+                for (int i = 0; i <= expertId; i++) {
                     for (int j = 0; j < worldSize_; j++) {
-                        if ((i == expertId - 1) && j >= dstRankId) {
+                        if ((i == expertId) && j >= dstRankId) {
                             break;
                         }
-                        preCount += sendCountLocal.GetValue(i * worldSize_ + j); // 对epSendCount的前expertId - 1的行求和，和第expertId行的前dstRankId - 1求和
+                        // 对epSendCount的前startExpId到expertId - 1的行求和，和第expertId行的前dstRankId - 1求和
+                        preCount += sendCountLocal.GetValue((i + rankId_ * localMoeExpertNum_) * worldSize_ + j);
                     }
                 }
                 // preCount = static_cast<uint32_t>(sendCountLocal.GetValue(expertId * worldSize_ + dstRankId - 1)); // expertId专家从dstRankId收到的token在output上的偏移
@@ -401,7 +403,6 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
             // DataCopy(expandScalesLocal_, expandScalesGlobal_[preCount], (tokenNum + 31) / 32 * 32);
             SyncFunc<AscendC::HardEvent::MTE2_S>();
             uint32_t tokenOffset = 0;
-            uint32_t serverStartExpId = rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE * localMoeExpertNum_;
             // 从本server的专家起始id到当前expertId
             for (int i = serverStartExpId; i < rankId_ * localMoeExpertNum_ + expertId; i++) {
                 tokenOffset += sendCountLocal.GetValue(i * worldSize_ + dstRankId);
@@ -459,7 +460,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
         }
 
         statusBuf_.FreeTensor<int64_t>(InUb);
-        LocalTensor<int32_t> offsetReduceLocal = offsetReduceBuf_.Get<int32_t>();
+        // LocalTensor<int32_t> offsetReduceLocal = offsetReduceBuf_.Get<int32_t>();
 
         int32_t targetRankId = coreIdx_ * SERVER_RANK_SIZE + rankId_ % SERVER_RANK_SIZE;
         GlobalTensor<int32_t> offsetReduceGt = offsetInnerGlobal_[MAX_BS * moeExpertNum_ * targetRankId];
@@ -481,7 +482,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
             bool isTokenInServer = false;
             Duplicate(sumFloatLocal_, 0.0f, axisH_);
             for (uint32_t j = 0U; j < static_cast<uint32_t>(localMoeExpertNum_ * SERVER_RANK_SIZE); j++) {
-                int32_t expId = j + rankId_ * localMoeExpertNum_;
+                int32_t expId = j + rankId_ / SERVER_RANK_SIZE * SERVER_RANK_SIZE * localMoeExpertNum_;
                 int32_t offsetValue = offsetReduceGt.GetValue(i * moeExpertNum_ + expId);
                 if (offsetValue == -1)
                     continue;

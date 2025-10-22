@@ -706,7 +706,7 @@ Buffer::intranode_combine_a2(const torch::Tensor &x, const torch::Tensor &topk_i
     at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
     int64_t tp_world_size = 1;
     int64_t tp_rankId = 0;
-    int64_t moe_expert_number = send_head.size(0) * send_head.size(1); // local_expert_num * rank_num
+    int64_t moe_expert_number = send_head.size(0); // local_expert_num * rank_num
     int64_t global_bs = topk_idx_p.size(0) * num_ranks;
     // get ep & tp name
     char hcom_ep_name[HCOMM_NAME_LEN];
