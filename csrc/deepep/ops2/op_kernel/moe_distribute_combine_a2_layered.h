@@ -396,7 +396,7 @@ __aicore__ inline void MoeDistributeCombineA2Layered<TemplateMC2TypeA2layeredFun
                 // preCount = static_cast<uint32_t>(sendCountLocal.GetValue(expertId * worldSize_ + dstRankId - 1)); // expertId专家从dstRankId收到的token在output上的偏移
             }
 
-            uint32_t tokenNum = sendCountLocal.GetValue(expertId * worldSize_ + dstRankId);
+            uint32_t tokenNum = sendCountLocal.GetValue((expertId + rankId_ * localMoeExpertNum_) * worldSize_ + dstRankId);
             uint32_t startTokenAddr = preCount * axisH_;
             PRINTF("[AlltoAllDispatch] rank:%d, coreIdx_:%d, expertId:%d, dstRankId:%d, targetRank:%d, tokenNum:%d, preCount:%d\n",
                 rankId_, coreIdx_, expertId, dstRankId, targetRank, tokenNum, preCount);
