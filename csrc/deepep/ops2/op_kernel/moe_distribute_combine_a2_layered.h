@@ -42,7 +42,7 @@ public:
     constexpr static uint32_t RDMA_DATA_SIZE = 300U * 1024U * 1024U;
     constexpr static uint32_t EXTRA_TOKEN_INFO_NUM = 4U; // 专家信息 权重信息 量化Scale 到达标志位
     constexpr static uint64_t MB_SIZE = 1024UL * 1024UL;
-    constexpr static uint32_t MAX_BS = 16;            // 每卡支持的最大bs
+    constexpr static uint32_t MAX_BS = 4096;            // 每卡支持的最大bs
 
     template <AscendC::HardEvent event>
     __aicore__ inline void SyncFunc()
