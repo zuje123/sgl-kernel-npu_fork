@@ -738,7 +738,11 @@ private:
         // 假设epTokenCntGt为 [2,2,2,2] --> 起始前缀和 [0,2,4,6]
         int32_t preCnt = 0;
         int32_t curVal = 0;
+        uint32_t localServerExpNum = numExperts / rankSize * localRankSize;
         for (int32_t i = 0; i < numExperts; ++i) {
+            if (i % localServerExpNum == 0) {
+                preCnt = 0;
+            }
             curVal = epTokenCntLt(i);
             pipe_barrier(PIPE_ALL);
             epTokenCntLt(i) = preCnt; // 设置为前一个元素的前缀和
