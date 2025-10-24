@@ -573,7 +573,7 @@ class Buffer:
         Internode combine implementation, for more details, please refer to the `combine` docs.
         Normally, you should not directly call this function.
         """
-        assert config is not None
+        # assert config is not None
 
         (
             src_idx,

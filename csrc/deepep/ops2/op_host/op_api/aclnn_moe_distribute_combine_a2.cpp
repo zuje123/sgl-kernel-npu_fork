@@ -38,7 +38,7 @@ aclnnStatus aclnnMoeDistributeCombineA2GetWorkspaceSize(const aclTensor* expandX
                                                             int64_t groupListType, aclTensor* x, uint64_t* workspaceSize,
                                                             aclOpExecutor** executor)
 {
-    printf("aclnnMoeDistributeCombineA2GetWorkspaceSize");
+    // printf("aclnnMoeDistributeCombineA2GetWorkspaceSize");
 
     aclnnStatus ret = aclnnInnerMoeDistributeCombineA2GetWorkspaceSize(expandX, expertIds, expandIdx, epSendCounts, expertScales,
         tpSendCounts, xActiveMask, activationScale, weightScale, groupList, expandScales, 
