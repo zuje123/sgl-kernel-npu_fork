@@ -218,7 +218,7 @@ Buffer::intranode_dispatch_a2(const at::Tensor& x, const std::optional<at::Tenso
 
     auto new_send_data = this->send_data;
     int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
-    std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
+    // std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
 
     auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor tmp_data = at::empty({send_count * num_ranks}, at::dtype(at::kInt).device(x.device())); // 给notify算子用来临时存数的空间
@@ -395,7 +395,7 @@ Buffer::intranode_normal_dispatch_a2(const at::Tensor& x, const std::optional<at
     int64_t global_bs = static_cast<int64_t>(MAX_BS * num_ranks);
 
     int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
-    std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
+    // std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
 
     bool use_quant = false;
     int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
@@ -657,7 +657,7 @@ Buffer::intranode_combine_a2(const torch::Tensor &x, const torch::Tensor &topk_i
                     const torch::Tensor &send_head, const torch::Tensor &offsetInner, const torch::Tensor &offsetOuter,
                     const torch::Tensor &countOuter, const torch::Tensor &expand_scales, const std::optional<at::Tensor> &combine_send_cost_stats)
 {
-    std::cout << "intranode_combine cpp" << std::endl;
+    // std::cout << "intranode_combine cpp" << std::endl;
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
     at::Tensor recv_x = x;
 
@@ -921,7 +921,7 @@ Buffer::internode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
     auto new_send_data = this->send_data;
     // 对应于layout的输出数据长度
     int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
-    std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
+    // std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
 
     auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor tmp_data = at::empty({send_count * num_ranks}, at::dtype(at::kInt).device(x.device())); // 给notify算子用来临时存数的空间
@@ -986,7 +986,7 @@ Buffer::internode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
         num_recv_tokens_per_expert_list.push_back(local_expert_recv_tokens);
     }
     int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
-    std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
+    // std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
 
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
