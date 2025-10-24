@@ -920,7 +920,7 @@ Buffer::internode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
 
     auto new_send_data = this->send_data;
     // 对应于layout的输出数据长度
-    int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + num_tokens * (1 + 2 * server_num + num_experts);
+    int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
     std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
 
     auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
