@@ -217,67 +217,6 @@ class Buffer:
             num_max_dispatch_tokens_per_rank, hidden, num_experts
         )
 
-    def dispatch_a2(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-                 handle: Optional[Tuple] = None,
-                 num_tokens_per_rank: Optional[torch.Tensor] = None, num_tokens_per_rdma_rank: Optional[torch.Tensor] = None,
-                 is_token_in_rank: Optional[torch.Tensor] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
-                 topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
-                 expert_alignment: int = 1, num_worst_tokens: int = 0,
-                 config: Optional[Config] = None,
-                 previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
-                 allocate_on_comm_stream: bool = False) -> \
-            Tuple[
-                torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-            ]:
-        # Default config
-        config = self.get_dispatch_config(self.group_size) if config is None else config
-
-        # Launch the kernel with cached or non-cached mode
-        if isinstance(x, tuple):
-            raise NotImplementedError("Not support fp8")
-        x_scales = None
-
-        if handle is not None:
-            raise NotImplementedError("Optional communication handle is not supported yet.")
-        else:
-            assert num_tokens_per_rank is not None and is_token_in_rank is not None and num_tokens_per_expert is not None
-            send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, \
-            src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out = \
-                self.runtime.intranode_dispatch_a2(x, x_scales, topk_idx, topk_weights,
-                                        num_tokens_per_rank, is_token_in_rank, num_tokens_per_expert, 0, None, None,
-                                        expert_alignment, num_worst_tokens, config,
-                                        getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream)
-            return send_data, recv_data, token_server_idx, token_unique_per_server, ep_rank_token_cnt, local_ep_token_cnt, \
-                src_offset_rank_token_idx, dst_offset_rank_token_idx, offset_inner, count_outer, expand_idx, expandx_out
-
-    def normal_dispatch_a2(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-                 token_server_idx: torch.Tensor, token_unique_per_server: torch.Tensor,
-                 ep_rank_token_cnt: torch.Tensor, src_offset_rank_token_idx: torch.Tensor,
-                 dst_offset_rank_token_idx: torch.Tensor, expand_idx: torch.Tensor,
-                 handle: Optional[Tuple] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
-                 topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
-                 config: Optional[Config] = None) -> \
-            Tuple[
-                torch.Tensor, torch.Tensor, torch.Tensor
-            ]:
-        # Default config
-        config = self.get_dispatch_config(self.group_size) if config is None else config
-
-        # Launch the kernel with cached or non-cached mode
-        if isinstance(x, tuple):
-            raise NotImplementedError("Not support fp8")
-        x_scales = None
-
-        if handle is not None:
-            raise NotImplementedError("Optional communication handle is not supported yet.")
-        else:
-            assert num_tokens_per_expert is not None
-            expandx_out, dynamic_scales_out, expand_scales, event = \
-                self.runtime.intranode_normal_dispatch_a2(x, x_scales, topk_idx, topk_weights, num_tokens_per_expert,
-                    token_server_idx, token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx,
-                    dst_offset_rank_token_idx, expand_idx)
-            return expandx_out, dynamic_scales_out, expand_scales
-
     # noinspection PyTypeChecker
     @log_parameters(["topk_idx"])
     def dispatch(
@@ -421,43 +360,6 @@ class Buffer:
                 handle,
                 EventOverlap(event),
             )
-
-        # noinspection PyTypeChecker
-
-    def combine_a2(
-        self,
-        x: torch.Tensor,
-        handle: Tuple,
-        topk_weights: Optional[torch.Tensor] = None,
-        bias: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]] = None,
-        config: Optional[Config] = None,
-        previous_event: Optional[EventOverlap] = None,
-        async_finish: bool = False,
-        allocate_on_comm_stream: bool = False,
-        combine_send_cost_stats: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], EventOverlap]:
-        # NOTES: the second `_` is for the sending side, so we should use the third one
-        (
-            rank_prefix_matrix,
-            _,
-            channel_prefix_matrix,
-            src_idx,
-            is_recv_token_in_rank,
-            send_head,
-            offset_inner,
-            offset_outer,
-            count_outer,
-            expand_scales,
-            topk_idx,
-            topk_weights_ori,
-        ) = handle
-
-        # Launch the kernel
-        recv_x, recv_topk_weights, event = self.runtime.intranode_combine_a2(
-            x, topk_idx, topk_weights_ori, src_idx, send_head, 
-            offset_inner, offset_outer, count_outer, expand_scales, combine_send_cost_stats
-        )
-        return recv_x, recv_topk_weights, EventOverlap(event)
 
     @log_parameters()
     def combine(
