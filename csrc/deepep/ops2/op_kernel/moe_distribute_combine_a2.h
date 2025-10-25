@@ -54,7 +54,8 @@ struct TaskInfo {
     uint32_t taskNum;
 
     __aicore__ inline TaskInfo() {}
-    __aicore__ inline void SplitCore(uint32_t taskNumTotal, uint32_t aivNum, uint32_t aivId) {
+    __aicore__ inline void SplitCore(uint32_t taskNumTotal, uint32_t aivNum, uint32_t aivId)
+    {
         if (aivNum == 0) {
             startTaskId = 0;
             endTaskId = 0;
@@ -82,12 +83,14 @@ namespace MoeDistributeCombineA2Impl {
 #define TemplateMC2TypeA2Func ExpandXType, ExpandIdxType
 using namespace AscendC;
 template <TemplateMC2TypeA2Class>
-class MoeDistributeCombineA2 {
+class MoeDistributeCombineA2
+{
 public:
     __aicore__ inline MoeDistributeCombineA2(){};
     __aicore__ inline void Init(GM_ADDR expandX, GM_ADDR expertIds, GM_ADDR expandIdx, GM_ADDR sendCount,
-        GM_ADDR scales, GM_ADDR XOut, GM_ADDR workspaceGM, TPipe *pipe,
-        const MoeDistributeCombineA2TilingData *tilingData, __gm__ void *mc2InitTiling, __gm__ void *mc2CcTiling);
+                                GM_ADDR scales, GM_ADDR XOut, GM_ADDR workspaceGM, TPipe *pipe,
+                                const MoeDistributeCombineA2TilingData *tilingData, __gm__ void *mc2InitTiling,
+                                __gm__ void *mc2CcTiling);
     __aicore__ inline void Process();
 
 private:
@@ -182,9 +185,10 @@ private:
     __gm__ HcclOpResParam *winContext_{nullptr};
 };
 template <TemplateMC2TypeA2Class>
-__aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Init(GM_ADDR expandX, GM_ADDR expertIds,
-    GM_ADDR expandIdx, GM_ADDR sendCount, GM_ADDR scales, GM_ADDR XOut, GM_ADDR workspaceGM, TPipe *pipe,
-    const MoeDistributeCombineA2TilingData *tilingData, __gm__ void *mc2InitTiling, __gm__ void *mc2CcTiling)
+__aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Init(
+    GM_ADDR expandX, GM_ADDR expertIds, GM_ADDR expandIdx, GM_ADDR sendCount, GM_ADDR scales, GM_ADDR XOut,
+    GM_ADDR workspaceGM, TPipe *pipe, const MoeDistributeCombineA2TilingData *tilingData, __gm__ void *mc2InitTiling,
+    __gm__ void *mc2CcTiling)
 {
     tpipe_ = pipe;
     expandXGM_ = expandX;
@@ -215,7 +219,7 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Init(GM_AD
     bufferId_ = bufferIdGlobal_.GetValue(0);
     windowInGM_ = windowInGM_ + halfWinSize_ * bufferId_;
     windowOutGM_ = hccl_.GetWindowsOutAddr(rankId_) + halfWinSize_ * bufferId_;
-    
+
     windowInstatusTensor_.SetGlobalBuffer((__gm__ uint32_t *)(windowInGM_));
     expandXGlobal_.SetGlobalBuffer((__gm__ ExpandXType *)expandX);
     expertIdsGlobal_.SetGlobalBuffer((__gm__ ExpandIdxType *)expertIds);
@@ -238,16 +242,19 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Init(GM_AD
     axisHExpandXTypeSize_ = axisH_ * sizeof(ExpandXType);
     bsKAlign_ = RoundUp(axisBS_ * axisK_, (uint32_t)8);
 
-    uint64_t stateSizeMaxSize = 2 * STATE_SPACE_SIZE; // 2: 实际上是(DATA_OFFSET+SKIP_OFFSET+sizeof(uint32)) + STATE_SPACE_SIZE，近似计算使用2 * STATE_SPACE_SIZE
-    uint64_t winSizeMin = (axisBS_ * worldSize_ * (localMoeExpertNum_ > axisK_ ? axisK_ : localMoeExpertNum_) * 
-        axisH_ * sizeof(uint16_t) + stateSizeMaxSize) * BUFFER_NUM; // 考虑负载极其不均衡时，HCCL BUFFSIZE需要开的大小
+    uint64_t stateSizeMaxSize = 2 * STATE_SPACE_SIZE; // 2: 实际上是(DATA_OFFSET+SKIP_OFFSET+sizeof(uint32)) +
+    STATE_SPACE_SIZE，近似计算使用2 * STATE_SPACE_SIZE uint64_t winSizeMin = (axisBS_ * worldSize_ * (localMoeExpertNum_
+    > axisK_ ? axisK_ : localMoeExpertNum_) * axisH_ * sizeof(uint16_t) + stateSizeMaxSize) * BUFFER_NUM; //
+    考虑负载极其不均衡时，HCCL BUFFSIZE需要开的大小
     assert(winContext_->winSize >= winSizeMin, "The HCCL_BUFFSIZE is %lluMB, the min value should be %lluMB. \
         epWorldSize:%u, epRankId:%u, moeExpertNum:%u, globalBs:%u, bs:%u, k:%u, h:%u, aivNum:%u, \
-        totalUbSize:%llu\n", 
-        winContext_->winSize / MB_SIZE, winSizeMin / MB_SIZE, 
-        tilingData->moeDistributeCombineInfo.epWorldSize, tilingData->moeDistributeCombineInfo.epRankId, tilingData->moeDistributeCombineInfo.moeExpertNum, 
-        tilingData->moeDistributeCombineInfo.globalBs, tilingData->moeDistributeCombineInfo.bs, tilingData->moeDistributeCombineInfo.k, 
-        tilingData->moeDistributeCombineInfo.h, tilingData->moeDistributeCombineInfo.aivNum, tilingData->moeDistributeCombineInfo.totalUbSize
+        totalUbSize:%llu\n",
+        winContext_->winSize / MB_SIZE, winSizeMin / MB_SIZE,
+        tilingData->moeDistributeCombineInfo.epWorldSize, tilingData->moeDistributeCombineInfo.epRankId,
+    tilingData->moeDistributeCombineInfo.moeExpertNum, tilingData->moeDistributeCombineInfo.globalBs,
+    tilingData->moeDistributeCombineInfo.bs, tilingData->moeDistributeCombineInfo.k,
+        tilingData->moeDistributeCombineInfo.h, tilingData->moeDistributeCombineInfo.aivNum,
+    tilingData->moeDistributeCombineInfo.totalUbSize
     );
 
     BuffInit();
@@ -261,7 +268,7 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::BuffInit()
     tpipe_->InitBuffer(statusBuf_, worldSize_ * UB_ALIGN);
     tpipe_->InitBuffer(expertIdsBuf_, axisBS_ * axisK_ * sizeof(int32_t));   // 32 * 8 * 4 = 1024
     tpipe_->InitBuffer(expandScalesBuf_, axisBS_ * axisK_ * sizeof(float));  // 32 * 8 * 4 = 1024
-    tpipe_->InitBuffer(tokenBuf_, axisHExpandXTypeSize_);             // 7168 * 2 = 14336
+    tpipe_->InitBuffer(tokenBuf_, axisHExpandXTypeSize_);                    // 7168 * 2 = 14336
     tpipe_->InitBuffer(rowTmpFloatBuf_, axisHFloatSize_);                    // 7168 * 4 = 28672
     tpipe_->InitBuffer(mulBuf_, axisHFloatSize_);                            // 7168 * 4 = 28672
     tpipe_->InitBuffer(sumFloatBuf_, axisHFloatSize_);                       // 7168 * 4 = 28672
@@ -344,7 +351,8 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::AlltoAllDi
             localOutWindow_.SetGlobalBuffer((__gm__ ExpandXType *)(windowOutGM_ + dataOffsetOnWin_));
             localInWindow_.SetGlobalBuffer((__gm__ ExpandXType *)(windowInGM_ + dataOffsetOnWin_));
             uint32_t rankIdOffset = rankId_ - startRankId_;
-            uint64_t rankTokenNum = (batchWriteItemLocalB64(rankIdOffset * 4 + 2) - SKIP_OFFSET / sizeof(ExpandXType) - 2) / axisH_;
+            uint64_t rankTokenNum =
+                (batchWriteItemLocalB64(rankIdOffset * 4 + 2) - SKIP_OFFSET / sizeof(ExpandXType) - 2) / axisH_;
             for (uint32_t tokenId = 0; tokenId < rankTokenNum; ++tokenId) {
                 LocalTensor<ExpandXType> InUb = moeQueue_.AllocTensor<ExpandXType>();
                 DataCopy(InUb, localOutWindow_[tokenId * axisH_], axisH_);
@@ -353,8 +361,8 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::AlltoAllDi
                 DataCopy(localInWindow_[tokenId * axisH_], OutUb, axisH_);
                 moeQueue_.FreeTensor<ExpandXType>(OutUb);
             }
-            flagGlobal_.SetGlobalBuffer(
-                (__gm__ uint32_t *)localInWindow_.GetPhyAddr(rankTokenNum * axisH_ + SKIP_OFFSET / sizeof(ExpandXType)));
+            flagGlobal_.SetGlobalBuffer((__gm__ uint32_t *)localInWindow_.GetPhyAddr(
+                rankTokenNum * axisH_ + SKIP_OFFSET / sizeof(ExpandXType)));
             flagGlobal_(0) = FLAG_VALUE;
             DataCacheCleanAndInvalid<uint32_t, AscendC::CacheLine::SINGLE_CACHE_LINE, AscendC::DcciDst::CACHELINE_OUT>(
                 flagGlobal_);
@@ -372,12 +380,12 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Preload()
     DataCopy(expertIdsLocal_, expertIdsGlobal_, bsKAlign_);
     Duplicate(recvCountLocal_, (uint32_t)0, moeExpertNum_);
     Duplicate(expertWindowOffsetLocal_, (uint32_t)0, moeExpertNum_);
-    
+
     SyncFunc<AscendC::HardEvent::V_MTE3>();
 
     if (coreIdx_ == aivNum_ - 1) {
         DataCopyPad(expertRecvCountGlobal_, recvCountLocal_,
-            {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
+                    {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
     }
 
     SyncAll<true>();
@@ -391,13 +399,13 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Preload()
 
     SetAtomicAdd<int32_t>();
     DataCopyPad(expertRecvCountGlobal_, recvCountLocal_,
-        {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
+                {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
     SetAtomicNone();
 
     SyncAll<true>();
 
     DataCopyPad(recvCountLocal_, expertRecvCountGlobal_,
-        {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0}, {false, 0, 0, 0});
+                {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0}, {false, 0, 0, 0});
 
     SyncFunc<AscendC::HardEvent::MTE2_S>();
 
@@ -412,13 +420,13 @@ __aicore__ inline void MoeDistributeCombineA2<TemplateMC2TypeA2Func>::Preload()
         }
         SyncFunc<AscendC::HardEvent::S_MTE3>();
         DataCopyPad(expertWindowOffsetGlobal_[start], expertWindowOffsetLocal_,
-            {1, static_cast<uint32_t>(localMoeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
+                    {1, static_cast<uint32_t>(localMoeExpertNum_ * sizeof(uint32_t)), 0, 0, 0});
         SyncFunc<AscendC::HardEvent::MTE3_S>();
     }
     SyncAll<true>();
 
     DataCopyPad(expertWindowOffsetLocal_, expertWindowOffsetGlobal_,
-        {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0}, {false, 0, 0, 0});
+                {1, static_cast<uint32_t>(moeExpertNum_ * sizeof(uint32_t)), 0, 0, 0}, {false, 0, 0, 0});
 
     tokenNumPerCore_ = axisBS_ / aivNum_;
     uint32_t undoTokenNum = axisBS_ % aivNum_;

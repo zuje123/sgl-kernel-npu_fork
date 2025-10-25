@@ -60,13 +60,12 @@ extern "C" {
  * @return aclnnStatus: 返回值，返回状态码
  *
  */
-__attribute__((visibility("default")))
-aclnnStatus aclnnMoeDistributeCombineA2GetWorkspaceSize(
+__attribute__((visibility("default"))) aclnnStatus aclnnMoeDistributeCombineA2GetWorkspaceSize(
     const aclTensor *expandX, const aclTensor *expertIds, const aclTensor *expandIdx, const aclTensor *epSendCounts,
     const aclTensor *expertScales, const aclTensor *tpSendCounts, const aclTensor *xActiveMask,
     const aclTensor *activationScale, const aclTensor *weightScale, const aclTensor *groupList,
-    const aclTensor *expandScales, const aclTensor* offsetInner, const aclTensor* offsetOuter, const aclTensor* countOuter,
-    char *groupEp, int64_t epWorldSize, int64_t epRankId, int64_t moeExpertNum,
+    const aclTensor *expandScales, const aclTensor *offsetInner, const aclTensor *offsetOuter,
+    const aclTensor *countOuter, char *groupEp, int64_t epWorldSize, int64_t epRankId, int64_t moeExpertNum,
     char *groupTp, int64_t tpWorldSize, int64_t tpRankId, int64_t expertShardType, int64_t sharedExpertNum,
     int64_t sharedExpertRankNum, int64_t globalBs, int64_t outDtype, int64_t commQuantMode, int64_t groupListType,
     aclTensor *x, uint64_t *workspaceSize, aclOpExecutor **executor);
@@ -80,12 +79,12 @@ aclnnStatus aclnnMoeDistributeCombineA2GetWorkspaceSize(
  * @param [in] stream: acl stream流。
  * @return aclnnStatus: 返回状态码
  */
-__attribute__((visibility("default")))
-aclnnStatus aclnnMoeDistributeCombineA2(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor,
-                                      aclrtStream stream);
+__attribute__((visibility("default"))) aclnnStatus aclnnMoeDistributeCombineA2(void *workspace, uint64_t workspaceSize,
+                                                                               aclOpExecutor *executor,
+                                                                               aclrtStream stream);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // OP_API_INC_MOE_DISTRIBUTE_COMBINE_
+#endif  // OP_API_INC_MOE_DISTRIBUTE_COMBINE_

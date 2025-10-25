@@ -181,7 +181,8 @@ static ge::graphStatus SetWorkSpace(gert::TilingContext *context, const char *no
 {
     size_t *workSpaces = context->GetWorkspaceSizes(1);
     OP_TILING_CHECK(workSpaces == nullptr, OP_LOGE(nodeName, "workSpaces is nullptr."), return ge::GRAPH_FAILED);
-    workSpaces[0] = SYSTEM_NEED_WORKSPACE + KERNEL_USE_WORKSPACE + KERNEL_A2_ARG_SIZE; // TODO: 多预留空间，dispatch和combine同步要改？
+    workSpaces[0] = SYSTEM_NEED_WORKSPACE + KERNEL_USE_WORKSPACE +
+                    KERNEL_A2_ARG_SIZE;  // TODO: 多预留空间，dispatch和combine同步要改？
     return ge::GRAPH_SUCCESS;
 }
 
@@ -213,15 +214,13 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
             "tokenPerExpertData datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
             static_cast<ge::DataType>(tokenPerExpertData->GetDataType())),
         return false);
-    auto tmpData = context->GetInputDesc(INPUT_TMP_DATA_INDEX); // 用于算子中临时存数的空间，与recvData相同大小
+    auto tmpData = context->GetInputDesc(INPUT_TMP_DATA_INDEX);  // 用于算子中临时存数的空间，与recvData相同大小
     OP_TILING_CHECK(tmpData == nullptr, OP_LOGE(nodeName, "tmpData is null."), return false);
     OP_TILING_CHECK(
         (tmpData->GetDataType() != ge::DT_BF16) && (tmpData->GetDataType() != ge::DT_FLOAT16) &&
             (tmpData->GetDataType() != ge::DT_FLOAT) && (tmpData->GetDataType() != ge::DT_INT32),
-        OP_LOGE(
-            nodeName,
-            "tmpData datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
-            static_cast<ge::DataType>(tmpData->GetDataType())),
+        OP_LOGE(nodeName, "tmpData datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+                static_cast<ge::DataType>(tmpData->GetDataType())),
         return false);
 
     auto sendDataOffset = context->GetOutputDesc(OUTPUT_SEND_DATA_OFFSET_INDEX);
@@ -253,17 +252,20 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
                 "tokenServerIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
                 static_cast<ge::DataType>(tokenServerIdx->GetDataType())),
         return false);
-    
+
     auto tokenUniquePerServer = context->GetOutputDesc(OUTPUT_TOKEN_UNIQUE_PER_SERVER_INDEX);
     OP_TILING_CHECK(tokenUniquePerServer == nullptr, OP_LOGE(nodeName, "tokenUniquePerServer is null."), return false);
     OP_TILING_CHECK(
-        (tokenUniquePerServer->GetDataType() != ge::DT_BF16) && (tokenUniquePerServer->GetDataType() != ge::DT_FLOAT16) &&
-            (tokenUniquePerServer->GetDataType() != ge::DT_FLOAT) && (tokenUniquePerServer->GetDataType() != ge::DT_INT32),
-        OP_LOGE(nodeName,
-                "tokenUniquePerServer datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
-                static_cast<ge::DataType>(tokenUniquePerServer->GetDataType())),
+        (tokenUniquePerServer->GetDataType() != ge::DT_BF16) &&
+            (tokenUniquePerServer->GetDataType() != ge::DT_FLOAT16) &&
+            (tokenUniquePerServer->GetDataType() != ge::DT_FLOAT) &&
+            (tokenUniquePerServer->GetDataType() != ge::DT_INT32),
+        OP_LOGE(
+            nodeName,
+            "tokenUniquePerServer datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+            static_cast<ge::DataType>(tokenUniquePerServer->GetDataType())),
         return false);
-    
+
     auto epRankTokenCnt = context->GetOutputDesc(OUTPUT_EP_RANK_TOKEN_CNT_INDEX);
     OP_TILING_CHECK(epRankTokenCnt == nullptr, OP_LOGE(nodeName, "epRankTokenCnt is null."), return false);
     OP_TILING_CHECK(
@@ -285,23 +287,31 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
         return false);
 
     auto srcOffsetRankTokenIdx = context->GetOutputDesc(OUTPUT_SRC_OFFSET_RANK_TOKEN_INDEX);
-    OP_TILING_CHECK(srcOffsetRankTokenIdx == nullptr, OP_LOGE(nodeName, "srcOffsetRankTokenIdx is null."), return false);
+    OP_TILING_CHECK(srcOffsetRankTokenIdx == nullptr, OP_LOGE(nodeName, "srcOffsetRankTokenIdx is null."),
+                    return false);
     OP_TILING_CHECK(
-        (srcOffsetRankTokenIdx->GetDataType() != ge::DT_BF16) && (srcOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT16) &&
-            (srcOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT) && (srcOffsetRankTokenIdx->GetDataType() != ge::DT_INT32),
-        OP_LOGE(nodeName,
-                "srcOffsetRankTokenIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
-                static_cast<ge::DataType>(srcOffsetRankTokenIdx->GetDataType())),
+        (srcOffsetRankTokenIdx->GetDataType() != ge::DT_BF16) &&
+            (srcOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT16) &&
+            (srcOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT) &&
+            (srcOffsetRankTokenIdx->GetDataType() != ge::DT_INT32),
+        OP_LOGE(
+            nodeName,
+            "srcOffsetRankTokenIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+            static_cast<ge::DataType>(srcOffsetRankTokenIdx->GetDataType())),
         return false);
 
     auto dstOffsetRankTokenIdx = context->GetOutputDesc(OUTPUT_DST_OFFSET_RANK_TOKEN_INDEX);
-    OP_TILING_CHECK(dstOffsetRankTokenIdx == nullptr, OP_LOGE(nodeName, "dstOffsetRankTokenIdx is null."), return false);
+    OP_TILING_CHECK(dstOffsetRankTokenIdx == nullptr, OP_LOGE(nodeName, "dstOffsetRankTokenIdx is null."),
+                    return false);
     OP_TILING_CHECK(
-        (dstOffsetRankTokenIdx->GetDataType() != ge::DT_BF16) && (dstOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT16) &&
-            (dstOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT) && (dstOffsetRankTokenIdx->GetDataType() != ge::DT_INT32),
-        OP_LOGE(nodeName,
-                "dstOffsetRankTokenIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
-                static_cast<ge::DataType>(dstOffsetRankTokenIdx->GetDataType())),
+        (dstOffsetRankTokenIdx->GetDataType() != ge::DT_BF16) &&
+            (dstOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT16) &&
+            (dstOffsetRankTokenIdx->GetDataType() != ge::DT_FLOAT) &&
+            (dstOffsetRankTokenIdx->GetDataType() != ge::DT_INT32),
+        OP_LOGE(
+            nodeName,
+            "dstOffsetRankTokenIdx datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
+            static_cast<ge::DataType>(dstOffsetRankTokenIdx->GetDataType())),
         return false);
 
     auto offsetInner = context->GetOutputDesc(OUTPUT_OFFSET_INNER_INDEX);
@@ -323,7 +333,7 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
                 "countOuter datatype is invalid, datatype should be bf16 or float16 or float or int, but is %d.",
                 static_cast<ge::DataType>(countOuter->GetDataType())),
         return false);
-    
+
     auto expandIdx = context->GetOutputDesc(OUTPUT_EXPAND_IDX_INDEX);
     OP_TILING_CHECK(expandIdx == nullptr, OP_LOGE(nodeName, "expandIdx is null."), return false);
     OP_TILING_CHECK(

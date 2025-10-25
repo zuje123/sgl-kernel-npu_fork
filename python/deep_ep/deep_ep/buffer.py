@@ -291,8 +291,21 @@ class Buffer:
 
         # Internode
         if self.runtime.get_num_rdma_ranks() > 1:
-            return self.internode_dispatch(x, handle, num_tokens_per_rank, num_tokens_per_rdma_rank, is_token_in_rank, num_tokens_per_expert,
-                                           topk_idx, topk_weights, expert_alignment, config, previous_event, async_finish, allocate_on_comm_stream)
+            return self.internode_dispatch(
+                x,
+                handle,
+                num_tokens_per_rank,
+                num_tokens_per_rdma_rank,
+                is_token_in_rank,
+                num_tokens_per_expert,
+                topk_idx,
+                topk_weights,
+                expert_alignment,
+                config,
+                previous_event,
+                async_finish,
+                allocate_on_comm_stream,
+            )
 
         # Launch the kernel with cached or non-cached mode
         if isinstance(x, tuple):
@@ -399,8 +412,17 @@ class Buffer:
         """
         # Internode
         if self.runtime.get_num_rdma_ranks() > 1:
-            return self.internode_combine(x, handle, topk_weights, bias, config, previous_event, async_finish, allocate_on_comm_stream)
-            
+            return self.internode_combine(
+                x,
+                handle,
+                topk_weights,
+                bias,
+                config,
+                previous_event,
+                async_finish,
+                allocate_on_comm_stream,
+            )
+
         # NOTES: the second `_` is for the sending side, so we should use the third one
         (
             rank_prefix_matrix,
@@ -419,16 +441,29 @@ class Buffer:
         )
         return recv_x, recv_topk_weights, EventOverlap(event)
 
-    def internode_dispatch(self, x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-                           handle: Optional[Tuple] = None,
-                           num_tokens_per_rank: Optional[torch.Tensor] = None, num_tokens_per_rdma_rank: Optional[torch.Tensor] = None,
-                           is_token_in_rank: Optional[torch.Tensor] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
-                           topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None, expert_alignment: int = 1,
-                           config: Optional[Config] = None,
-                           previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
-                           allocate_on_comm_stream: bool = False) -> \
-            Tuple[Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], Optional[torch.Tensor],
-            Optional[torch.Tensor], List[int], Tuple, EventOverlap]:
+    def internode_dispatch(
+        self,
+        x: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
+        handle: Optional[Tuple] = None,
+        num_tokens_per_rank: Optional[torch.Tensor] = None,
+        num_tokens_per_rdma_rank: Optional[torch.Tensor] = None,
+        is_token_in_rank: Optional[torch.Tensor] = None,
+        num_tokens_per_expert: Optional[torch.Tensor] = None,
+        topk_idx: Optional[torch.Tensor] = None,
+        topk_weights: Optional[torch.Tensor] = None,
+        expert_alignment: int = 1,
+        config: Optional[Config] = None,
+        previous_event: Optional[EventOverlap] = None,
+        async_finish: bool = False,
+        allocate_on_comm_stream: bool = False,
+    ) -> Tuple[
+        Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        List[int],
+        Tuple,
+        EventOverlap,
+    ]:
         """
         Internode dispatch implementation, for more details, please refer to the `dispatch` docs.
         Normally, you should not directly call this function.
@@ -443,34 +478,70 @@ class Buffer:
                 "Optional communication handle is not supported yet."
             )
         else:
-            assert num_tokens_per_rank is not None and is_token_in_rank is not None and num_tokens_per_expert is not None
-            recv_x, recv_x_scales, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, \
-                recv_src_idx, send_head, \
-                offset_inner, offset_outer, count_outer, expand_scales, event = self.runtime.internode_dispatch(
-                x, x_scales, topk_idx, topk_weights,
-                num_tokens_per_rank, num_tokens_per_rdma_rank, is_token_in_rank, num_tokens_per_expert,
-                config, getattr(previous_event, 'event', None), async_finish, allocate_on_comm_stream, use_quant)
+            assert (
+                num_tokens_per_rank is not None
+                and is_token_in_rank is not None
+                and num_tokens_per_expert is not None
+            )
+            (
+                recv_x,
+                recv_x_scales,
+                recv_topk_idx,
+                recv_topk_weights,
+                num_recv_tokens_per_expert_list,
+                recv_src_idx,
+                send_head,
+                offset_inner,
+                offset_outer,
+                count_outer,
+                expand_scales,
+                event,
+            ) = self.runtime.internode_dispatch(
+                x,
+                x_scales,
+                topk_idx,
+                topk_weights,
+                num_tokens_per_rank,
+                num_tokens_per_rdma_rank,
+                is_token_in_rank,
+                num_tokens_per_expert,
+                config,
+                getattr(previous_event, "event", None),
+                async_finish,
+                allocate_on_comm_stream,
+                use_quant,
+            )
             handle = (
                 recv_src_idx,
                 is_token_in_rank,
-                send_head,      # ep_rank_token_cnt
+                send_head,  # ep_rank_token_cnt
                 topk_idx,
                 topk_weights,
                 offset_inner,
-                offset_outer,   # token_server_idx
+                offset_outer,  # token_server_idx
                 count_outer,
                 expand_scales,
             )
-            return (recv_x, recv_x_scales) if x_scales is not None else recv_x, recv_topk_idx, recv_topk_weights, \
-                num_recv_tokens_per_expert_list, handle, EventOverlap(event)
+            return (
+                (recv_x, recv_x_scales) if x_scales is not None else recv_x,
+                recv_topk_idx,
+                recv_topk_weights,
+                num_recv_tokens_per_expert_list,
+                handle,
+                EventOverlap(event),
+            )
 
-    def internode_combine(self, x: torch.Tensor, handle: Union[tuple, list],
-                          topk_weights: Optional[torch.Tensor] = None,
-                          bias: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]] = None,
-                          config: Optional[Config] = None,
-                          previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
-                          allocate_on_comm_stream: bool = False) -> \
-            Tuple[torch.Tensor, Optional[torch.Tensor], EventOverlap]:
+    def internode_combine(
+        self,
+        x: torch.Tensor,
+        handle: Union[tuple, list],
+        topk_weights: Optional[torch.Tensor] = None,
+        bias: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]] = None,
+        config: Optional[Config] = None,
+        previous_event: Optional[EventOverlap] = None,
+        async_finish: bool = False,
+        allocate_on_comm_stream: bool = False,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], EventOverlap]:
         """
         Internode combine implementation, for more details, please refer to the `combine` docs.
         Normally, you should not directly call this function.
@@ -491,8 +562,15 @@ class Buffer:
 
         # Launch the kernel
         recv_x, recv_topk_weights, event = self.runtime.internode_combine(
-            x, topk_idx, topk_weights_ori, src_idx, send_head,
-            offset_inner, offset_outer, count_outer, expand_scales
+            x,
+            topk_idx,
+            topk_weights_ori,
+            src_idx,
+            send_head,
+            offset_inner,
+            offset_outer,
+            count_outer,
+            expand_scales,
         )
         return recv_x, recv_topk_weights, EventOverlap(event)
 

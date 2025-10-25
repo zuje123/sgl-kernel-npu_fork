@@ -249,15 +249,18 @@ private:
                 int32_t offset = localTokenServerOffsetTensor.GetValue(i * serverNum_ + server_id);
                 int32_t count = countExpertTensor.GetValue(expert_id);
                 expertRankTokenIdxTensor.SetValue(expert_id * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, offset);
-                expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE, i);
+                expertRankTokenIdxTensor.SetValue((numExperts_ + expert_id) * TEMP_BATCH_SIZE + count % TEMP_BATCH_SIZE,
+                                                  i);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
-                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numExperts_ + expert_id]);
+                                                  AscendC::DcciDst::CACHELINE_OUT>(
+                    sendTokenIdxGM_[i * numExperts_ + expert_id]);
                 __asm__ __volatile__("");
                 sendTokenIdxGM_.SetValue(i * numExperts_ + expert_id, count);
                 __asm__ __volatile__("");
                 AscendC::DataCacheCleanAndInvalid<T, AscendC::CacheLine::SINGLE_CACHE_LINE,
-                    AscendC::DcciDst::CACHELINE_OUT>(sendTokenIdxGM_[i * numExperts_ + expert_id]);
+                                                  AscendC::DcciDst::CACHELINE_OUT>(
+                    sendTokenIdxGM_[i * numExperts_ + expert_id]);
                 __asm__ __volatile__("");
                 count++;
                 countExpertTensor.SetValue(expert_id, count);
