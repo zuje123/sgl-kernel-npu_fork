@@ -361,10 +361,10 @@ private:
 
         for (int i = 0; i < localRankSize; ++i) {
             int32_t curServerRankId = serverId * localRankSize + i;
+            // printf("SetInner rank:%d coreIdx:%d magic:%d, curServerRankId:%d\n", rank, blockIdx, magic, curServerRankId);
             sync.SetInnerFlag(magic, 1, curServerRankId, rank);
         }
         // AscendC::DumpTensor(writeGt[queLen * targetRankId + STATUS_ENTRY_SIZE / sizeof(T)], 338, datalen);
-        //printf("SetInner rank:%d coreIdx:%d targetRankId:%d\n", rank, blockIdx, targetRankId);
     }
 
     __aicore__ inline void ShareToShareSlice()
@@ -373,9 +373,11 @@ private:
         if (blockIdx > 0) {
             return;
         }
+        // printflag("ShareToShareSlice\n");
         int64_t recvCount = this->len;
         for (int i = 0; i < localRankSize; ++i) {
             int32_t targetRankId = serverId * localRankSize + i;
+            // printf("WaitInner rank:%d coreIdx:%d magic:%d, targetRankId:%d\n", rank, blockIdx, magic, targetRankId);
             sync.WaitInnerFlag(magic, 1, rank, targetRankId);
             for (int j = 0; j < serverNum; ++j) {
                 int32_t serverTarRankId = j * localRankSize + i; // 对应为targetRankId的同号卡
@@ -644,10 +646,12 @@ private:
         if (blockIdx == 4) {
             // printflag("before BuildExpandIdxData\n");
             BuildExpandIdxData();
+            // printflag("after BuildExpandIdxData\n");
         }
         if (blockIdx == 5) {
             // printflag("before BuildOffsetInnerData\n");
             BuildOffsetInnerData();
+            // printflag("after BuildOffsetInnerData\n");
         }
     }
 

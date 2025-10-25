@@ -59,7 +59,7 @@ aclnnStatus aclnnMoeDistributeCombineA2(void *workspace, uint64_t workspaceSize,
             NnopbaseSetHcclServerType(executor, NNOPBASE_HCCL_SERVER_TYPE_MTE);
         }
     }
-    printf("aclnnMoeDistributeCombineA2");
+    // printf("aclnnMoeDistributeCombineA2");
     aclnnStatus ret = aclnnInnerMoeDistributeCombineA2(workspace, workspaceSize, executor, stream);
     return ret;
 }
