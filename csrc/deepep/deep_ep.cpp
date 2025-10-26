@@ -468,6 +468,7 @@ Buffer::internode_dispatch(
         }
         new_x = torch::cat(x_blocks, 0);
     }
+    // std::cout << "[deepep]rank: " << rank << "is_padding: " << this->is_padding << ", new_x.shape:" << new_x.sizes() << std::endl;
 
     EP_HOST_ASSERT(num_tokens_per_rank.has_value());
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
@@ -504,6 +505,28 @@ Buffer::internode_dispatch(
         EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
     }
 
+    auto device = x.device();
+    at::Tensor new_topk_weights;
+    // for padding
+    if (topk_weights.has_value()) {
+        if (!this->is_padding) {
+            new_topk_weights = topk_weights.value();
+        } else {
+            std::vector<at::Tensor> weight_blocks;
+            if (topk_weights->size(0) != 0) {
+                weight_blocks.emplace_back(topk_weights.value());
+            }
+            for (int i = 0; i < this->padding_cnt; i++) {
+                at::Tensor tmp_weight = torch::arange(0, num_topk, topk_weights->options()).reshape({1, num_topk});
+                weight_blocks.emplace_back(tmp_weight);
+            }
+            new_topk_weights = torch::cat(weight_blocks, 0);
+        }
+    } else {
+        new_topk_weights = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
+    }
+    // std::cout << "[deepep]rank: " << rank << "is_padding: " << this->is_padding << ", new_topk_weights.shape:" << new_topk_weights.sizes() << std::endl;
+
     // FP8 scales checks
     float *x_scales_ptr = nullptr;
     int num_scales = 0, scale_token_stride = 0, scale_hidden_stride = 0;
@@ -526,7 +549,7 @@ Buffer::internode_dispatch(
     auto new_send_data = this->send_data;
     // 对应于layout的输出数据长度
     int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
-    // std::cout << "[deepep]rank: " << rank << "send_count: " << send_count << std::endl;
+    // std::cout << "[deepep]rank: " << rank << ", send_count: " << send_count << ", num_tokens: " << num_tokens << std::endl;
 
     auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor tmp_data =
@@ -583,7 +606,7 @@ Buffer::internode_dispatch(
         num_recv_tokens_per_expert_list.push_back(local_expert_recv_tokens);
     }
     int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
-    // std::cout << "num_recv_tokens: " << num_recv_tokens << "total_recv_tokens: " << total_recv_tokens << std::endl;
+    // std::cout << "[deepep]rank: " << rank << ", num_recv_tokens: " << num_recv_tokens << ", total_recv_tokens: " << total_recv_tokens << std::endl;
 
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
@@ -606,7 +629,7 @@ Buffer::internode_dispatch(
     auto expand_scales = at::empty({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
     at::Tensor dispatch_wait_recv_cost_stats_out;
 
-    EXEC_NPU_CMD(aclnnDispatchNormalA2, x, expert_ids, x_scales, xActiveMask, topk_weights, token_server_idx,
+    EXEC_NPU_CMD(aclnnDispatchNormalA2, new_x, expert_ids, x_scales, xActiveMask, new_topk_weights, token_server_idx,
                  token_unique_per_server, ep_rank_token_cnt, src_offset_rank_token_idx, dst_offset_rank_token_idx,
                  hcom_ep_name, num_ranks, rank, num_experts, hcom_ep_name, tp_size, tp_rank, expertShardType,
                  sharedExpertNum, sharedExpertRankNum, quant_mode, global_bs, expertTokenNumsType, expandx_out,
@@ -657,25 +680,7 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
 
     const int num_tokens = topk_idx_p.size(0);
     const int num_topk = topk_idx_p.size(1);
-    at::Tensor expert_scales;
-    // for padding
-    if (topk_weights.has_value()) {
-        if (!this->is_padding) {
-            expert_scales = topk_weights.value();
-        } else {
-            std::vector<at::Tensor> weight_blocks;
-            if (topk_weights->size(0) != 0) {
-                weight_blocks.emplace_back(topk_weights.value());
-            }
-            for (int i = 0; i < this->padding_cnt; i++) {
-                at::Tensor tmp_weight = torch::arange(0, num_topk, topk_weights->options()).reshape({1, num_topk});
-                weight_blocks.emplace_back(tmp_weight);
-            }
-            expert_scales = torch::cat(weight_blocks, 0);
-        }
-    } else {
-        expert_scales = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
-    }
+    at::Tensor expert_scales = at::empty({1}, at::dtype(at::kFloat).device(x.device()));
 
     int64_t hidden = static_cast<int>(recv_x.size(1));
     at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
@@ -693,7 +698,7 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
     }
 
     // Combine data
-    auto combined_x = torch::empty({expert_scales.size(0), hidden}, x.options());
+    auto combined_x = torch::empty({x.size(0), hidden}, x.options());
     std::optional<torch::Tensor> recv_topk_weights;
     std::optional<EventHandle> event;
     at::Tensor x_active_mask, activation_scale, weight_scale, group_list;
