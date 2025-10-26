@@ -698,7 +698,7 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
     }
 
     // Combine data
-    auto combined_x = torch::empty({x.size(0), hidden}, x.options());
+    auto combined_x = torch::empty({new_topk_idx.size(0), hidden}, x.options());
     std::optional<torch::Tensor> recv_topk_weights;
     std::optional<EventHandle> event;
     at::Tensor x_active_mask, activation_scale, weight_scale, group_list;

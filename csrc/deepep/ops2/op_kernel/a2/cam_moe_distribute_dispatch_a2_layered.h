@@ -5,6 +5,7 @@
 #include "kernel_tiling/kernel_tiling.h"
 #include "../cam_moe_distribute_dispatch_tiling.h"
 #include "../moe_distribute_base.h"
+#include "../comm_args.h"
 
 namespace MoeDistributeDispatchA2Impl {
 constexpr uint32_t STATE_OFFSET = 512;                 // 状态空间偏移地址
@@ -22,7 +23,7 @@ constexpr uint32_t DISPATCH_TOKEN_UB_SIZE = 176 * 1024;
 constexpr uint32_t IPC_MAGIC_OFFSET = 2 * 1024 * 1024 - 64 * 32;
 constexpr uint32_t IPC_TOKEN_CNT_OFFSET = 2 * 1024 * 1024;
 constexpr uint32_t IPC_DATA_OFFSET = 4 * 1024 * 1024;
-constexpr uint32_t NOTIFY_OFFSET = 0 * 1024 * 1024;  // 204
+constexpr uint32_t NOTIFY_OFFSET = 404 * 1024 * 1024;  // 204
 constexpr uint32_t IPC_BUFF_ALIGN = 512;
 constexpr uint32_t TOKEN_COUNT_SIZE = 32;
 constexpr uint32_t FLAG_U32_CNT = TOKEN_COUNT_SIZE / 4;
