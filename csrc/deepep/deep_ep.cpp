@@ -468,7 +468,6 @@ Buffer::internode_dispatch(
         }
         new_x = torch::cat(x_blocks, 0);
     }
-    // std::cout << "[deepep]rank: " << rank << "is_padding: " << this->is_padding << ", new_x.shape:" << new_x.sizes() << std::endl;
 
     EP_HOST_ASSERT(num_tokens_per_rank.has_value());
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
@@ -525,7 +524,6 @@ Buffer::internode_dispatch(
     } else {
         new_topk_weights = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
     }
-    // std::cout << "[deepep]rank: " << rank << "is_padding: " << this->is_padding << ", new_topk_weights.shape:" << new_topk_weights.sizes() << std::endl;
 
     // FP8 scales checks
     float *x_scales_ptr = nullptr;
@@ -549,7 +547,6 @@ Buffer::internode_dispatch(
     auto new_send_data = this->send_data;
     // 对应于layout的输出数据长度
     int64_t send_count = num_experts * A2_EXPERT_DATA_SIZE + server_num + MAX_BS * (1 + 2 * server_num + num_experts);
-    // std::cout << "[deepep]rank: " << rank << ", send_count: " << send_count << ", num_tokens: " << num_tokens << std::endl;
 
     auto send_data_offset = at::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor tmp_data =
@@ -606,7 +603,6 @@ Buffer::internode_dispatch(
         num_recv_tokens_per_expert_list.push_back(local_expert_recv_tokens);
     }
     int num_recv_tokens = (total_recv_tokens == 0) ? 1 : total_recv_tokens;
-    // std::cout << "[deepep]rank: " << rank << ", num_recv_tokens: " << num_recv_tokens << ", total_recv_tokens: " << total_recv_tokens << std::endl;
 
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
