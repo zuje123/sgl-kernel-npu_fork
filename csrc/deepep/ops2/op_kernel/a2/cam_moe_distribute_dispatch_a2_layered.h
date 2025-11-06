@@ -798,19 +798,18 @@ __aicore__ inline void CamMoeDistributeDispatchA2Layered<TemplateMC2TypeA2layere
 
                 LocalTensor<int> expLt = localUB[expOffsetInStruct_].ReinterpretCast<int>();
                 SyncFunc<AscendC::HardEvent::MTE2_S>();
-                int index = 100;
+                int index = -1;
                 for (int j = 0; j < axisK_; j++) {
                     if (expLt.GetValue(j) == recvExpId) {
                         index = j;
                     }
                 }
-
+                if (index < 0) {
+                    continue;
+                }
                 // weight to output
                 LocalTensor<float> weightLt = localUB[weightOffsetInStruct_].ReinterpretCast<float>();
                 float weightVal = weightLt.GetValue(index);
-                if (index == 100) {
-                    AscendC::DumpTensor(weightLt, 1016, 32);
-                }
                 float target = (float)1.0;
 
                 SyncFunc<AscendC::HardEvent::MTE3_S>();

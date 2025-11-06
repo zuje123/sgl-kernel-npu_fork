@@ -1064,8 +1064,8 @@ static uint64_t MoeDistributeDispatchA2CalcTilingKey(const gert::TilingContext &
 
 static ge::graphStatus MoeDistributeDispatchA2TilingFuncImpl(gert::TilingContext &context)
 {
-    OP_LOGD(nodeName, "start MoeDistributeDispatchA2TilingFuncImpl func.");
     const char *nodeName = context.GetNodeName();
+    OP_LOGD(nodeName, "start MoeDistributeDispatchA2TilingFuncImpl func.");
     OP_LOGI(nodeName, "Enter MoeDistributeDispatchA2 tiling func.");
 
     // 1. tilingData

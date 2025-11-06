@@ -793,7 +793,7 @@ Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
         at::empty({num_max_tokens, hidden}, new_x.options().dtype(use_fp8 ? at::kChar : at::kBFloat16));
     auto packed_recv_x_scales = at::empty({num_max_tokens}, at::dtype(at::kFloat).device(device));
     auto expandIdx = at::empty({max_size}, at::dtype(at::kInt).device(device));
-    // ��Ӧ��layout��������ݳ���
+
     int32_t server_num = num_ranks / LOCAL_RANK_SIZE;
     at::Tensor expand_scales = at::empty({1}, at::dtype(at::kFloat).device(device));
     ;  // just A2 layered need
