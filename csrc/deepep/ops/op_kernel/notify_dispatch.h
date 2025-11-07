@@ -58,7 +58,12 @@ public:
         localNodeId = rank / localRankSize;
         perNodeDataNum = GetDataCount(len, nodeNum);   // 128K/4 = 32K
         perRankDataNum = GetDataCount(len, rankSize);  // 128K/64 = 2K
-
+        totalRecvTokens_ = totalRecvTokens;
+        recvCount_ = recvCount;
+        recvOffset_ = recvOffset;
+        maxBs_ = maxBs;
+        recvTokensPerExpert_ = recvTokensPerExpert;
+        recvDataAlignLen = Ceil(numExperts * sendPerGroup * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
         tokenPerExpertDataAlignLen = Ceil(numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
         sendDataOffsetAlignLen = Ceil(numExperts * sizeof(T), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
         sendDataAlignLen = Ceil(numExperts * sendPerGroup * sizeof(T), UB_ALIGN_SIZE) * UB_ALIGN_SIZE;
@@ -76,6 +81,7 @@ public:
         tokenPerExpertDataInputGt.SetGlobalBuffer((__gm__ int32_t *)tokenPerExpertDataInput);
         sendDataOffsetOutputGt.SetGlobalBuffer((__gm__ T *)sendDataOffsetOutput);
         recvDataOutputGt.SetGlobalBuffer((__gm__ T *)recvDataOutput);
+        recvDataOutGt.SetGlobalBuffer((__gm__ int32_t *)recvDataOutput);
     }
 
     __aicore__ inline void Process()
@@ -90,6 +96,8 @@ public:
         if (blockIdx < coreNumPerStageY) {
             ShareToShareSlice();
         }
+        SyncAll<true>();
+        ReorderOutput();
     }
 
 private:
@@ -119,6 +127,9 @@ private:
         pipe.InitBuffer(tokenPerExpertDataBuf, tokenPerExpertDataAlignLen);
         pipe.InitBuffer(sendDataBuf, sendDataAlignLen);
         pipe.InitBuffer(sendDataOffsetBuf, sendDataOffsetAlignLen);
+        pipe.InitBuffer(sendCountBuf, tokenPerExpertDataAlignLen);
+        pipe.InitBuffer(sendOffsetBuf, tokenPerExpertDataAlignLen);
+        pipe.InitBuffer(recvDataBuf, recvDataAlignLen);
 
         __ubuf__ int32_t *tokenPerExpertUB = (__ubuf__ int32_t *)get_imm(96);
         CpGM2UB(tokenPerExpertUB, (__gm__ int32_t *)tokenPerExpertDataInputGt.GetPhyAddr(), tokenPerExpertDataAlignLen);
@@ -198,6 +209,30 @@ private:
         }
     }
 
+    __aicore__ inline void ReorderOutput()
+    {
+        sendCountTensor = sendCountBuf.Get<int32_t>();
+        sendOffsetTensor = sendOffsetBuf.Get<int32_t>();
+        recvDataTensor = recvDataBuf.Get<int32_t>();
+        Duplicate<int32_t>(sendCountTensor, 0, tokenPerExpertDataAlignLen / sizeof(int32_t));
+        Duplicate<int32_t>(sendOffsetTensor, 0, tokenPerExpertDataAlignLen / sizeof(int32_t));
+        DataCopyExtParams recvDataParams = {1U, static_cast<uint32_t>(recvDataAlignLen), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> DataCopyPadExtParams{false, 0U, 0U, 0U};
+        DataCopyPad(recvDataTensor, recvDataOutGt, recvDataParams, DataCopyPadExtParams);
+        AscendC::SetFlag<HardEvent::V_S>(EVENT_ID0);
+        AscendC::WaitFlag<HardEvent::V_S>(EVENT_ID0);
+        for (uint32_t expId = 0; expId < numExperts / rankSize; ++expId) {
+            for (uint32_t srcRank = 0; srcRank < rankSize; ++srcRank) {
+                uint32_t index = expId * rankSize + srcRank;
+                uint32_t pair_idx = sendPerGroup * (srcRank * numExperts / rankSize + expId);
+                sendCountTensor(index) = recvDataTensor(pair_idx);
+                sendOffsetTensor(index) = recvDataTensor(pair_idx + 1);
+                uint32_t BsCnt = recvDataTensor(pair_idx + 2);
+                maxBsNum = maxBsNum < BsCnt ? BsCnt : maxBsNum;
+            }
+        }
+    }
+
     FORCE_INLINE_AICORE int64_t GetDataCount(const int64_t dataLen, const int64_t useBlockNum);
     __aicore__ inline GM_ADDR GetWindAddrByRankId(const int32_t rankId, uint8_t ctxIdx);
     __aicore__ inline int32_t GetMagicValue(void);
@@ -215,6 +250,7 @@ private:
     GlobalTensor<int> tokenPerExpertDataInputGt;
     GlobalTensor<T> sendDataOffsetOutputGt;
     GlobalTensor<T> recvDataOutputGt;
+    GlobalTensor<int32_t> recvDataOutGt;
     GlobalTensor<T> readGt;
     GlobalTensor<T> writeGt;
     GlobalTensor<T> readGt1[MAX_BUFFER_NUMBER];
@@ -280,8 +316,14 @@ private:
     int32_t numRanks;
     int64_t timeout;
     uint16_t *rootRanks;
+    uint32_t maxBsNum{0};
     GM_ADDR scale;
     GM_ADDR shareAddrs[CAM_MAX_RANK_SIZE];  // List of shared memory addresses
+    GM_ADDR totalRecvTokens_;
+    GM_ADDR recvCount_;
+    GM_ADDR recvOffset_;
+    GM_ADDR maxBs_;
+    GM_ADDR recvTokensPerExpert_;
     __gm__ HcclOpResParam *winContext_[COMM_NUM]{nullptr, nullptr};
     Hccl<HCCL_SERVER_TYPE_AICPU> hccl_;
     GlobalTensor<GM_ADDR> peerMemsAddrGm_;
@@ -290,10 +332,16 @@ private:
     TBuf<QuePosition::VECCALC> tBuf;
     TBuf<> tokenPerExpertDataBuf;
     TBuf<> sendDataOffsetBuf;
+    TBuf<> sendCountBuf;
+    TBuf<> sendOffsetBuf;
     TBuf<> sendDataBuf;
-
+    TBuf<> recvDataBuf;
+    LocalTensor<int32_t> sendCountTensor;
+    LocalTensor<int32_t> sendOffsetTensor;
+    LocalTensor<int32_t> recvDataTensor;
     uint32_t sendDataAlignLen{0};
     uint32_t tokenPerExpertDataAlignLen{0};
+    uint32_t recvDataAlignLen{0};
     uint32_t sendDataOffsetAlignLen{0};
 
     SyncCollectives sync;
