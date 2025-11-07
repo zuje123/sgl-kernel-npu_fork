@@ -98,6 +98,8 @@ public:
         }
         SyncAll<true>();
         ReorderOutput();
+        SyncAll<true>();
+        BuildTotalRecvTokens();
     }
 
 private:
@@ -233,6 +235,36 @@ private:
         }
     }
 
+    __aicore__ inline void BuildTotalRecvTokens()
+    {
+        if (blockIdx > 1) {
+            return;
+        }
+        pipe.InitBuffer(tmpBuf_, Ceil(numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
+        pipe.InitBuffer(tmpBuf2_, Ceil(numExperts * sizeof(float), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
+        pipe.InitBuffer(tmpBuf3_, Ceil(numExperts * sizeof(float), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
+        pipe.InitBuffer(tmpBuf4_, Ceil(numExperts * sizeof(float), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
+
+        LocalTensor<int32_t> totalCntLt = tempBuf_.Get<int32_t>();
+        LocalTensor<float> floatExpTokenCntLt = tempBuf2_.Get<float>();
+        LocalTensor<float> floatExpTokenSumCntLt = tempBuf3_.Get<float>();
+        LocalTensor<float> sharedTmpBuffer = tempBuf4_.Get<float>();
+
+        Cast(floatExpTokenCntLt, sendCountTensor, RoundMode::CAST_NONE, numExperts);
+        PipeBarrier<PIPE_V>();
+        ReduceSum(floatExpTokenSumCntLt, floatExpTokenCntLt, sharedTmpBuffer, numExperts);
+        SyncFunc<AscendC::HardEvent::V_S>();
+        int32_t sumVal = static_cast<int32_t>(floatExpTokenSumCntLt.GetValue(0));
+        PipeBarrier<PIPE_V>();
+        totalCntLt(0) = sumVal;
+        PipeBarrier<PIPE_V>();
+        SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
+
+        // 拷贝到outputGT
+        DataCopyExtParams copyParams{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
+        DataCopyPad(totalRecvTokens_, totalCntLt, copyParams);
+    }
+
     FORCE_INLINE_AICORE int64_t GetDataCount(const int64_t dataLen, const int64_t useBlockNum);
     __aicore__ inline GM_ADDR GetWindAddrByRankId(const int32_t rankId, uint8_t ctxIdx);
     __aicore__ inline int32_t GetMagicValue(void);
@@ -343,6 +375,11 @@ private:
     uint32_t tokenPerExpertDataAlignLen{0};
     uint32_t recvDataAlignLen{0};
     uint32_t sendDataOffsetAlignLen{0};
+
+    TBuf<> tmpBuf_;
+    TBuf<> tmpBuf2_;
+    TBuf<> tmpBuf3_;
+    TBuf<> tmpBuf4_;
 
     SyncCollectives sync;
 };
