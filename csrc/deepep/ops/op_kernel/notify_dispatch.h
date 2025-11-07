@@ -12,14 +12,16 @@
 using namespace AscendC;
 using namespace Moe;
 
-#define KERNELS_ARGS_FUN_ALL2ALL()                                                                                \
-    GM_ADDR sendDataInput, GM_ADDR tokenPerExpertDataInput, GM_ADDR sendDataOffsetOutput, GM_ADDR recvDataOutput, \
-        int64_t len, int64_t numTokens, int op, int root, int cycleCount, GM_ADDR scale, int64_t scaleCount,      \
+#define KERNELS_ARGS_FUN_ALL2ALL()                                                                                  \
+    GM_ADDR sendDataInput, GM_ADDR tokenPerExpertDataInput, GM_ADDR sendDataOffsetOutput, GM_ADDR recvDataOutput,   \
+        GM_ADDR totalRecvTokens, GM_ADDR recvCount, GM_ADDR recvOffset, GM_ADDR maxBs, GM_ADDR recvTokensPerExpert, \
+        int64_t len, int64_t numTokens, int op, int root, int cycleCount, GM_ADDR scale, int64_t scaleCount,        \
         GM_ADDR offset, int localRank, int localRankSize, GM_ADDR commArgs, int magic
 
-#define KERNELS_ARGS_CALL_ALL2ALL()                                                                         \
-    sendDataInput, tokenPerExpertDataInput, sendDataOffsetOutput, recvDataOutput, len, numTokens, op, root, \
-        cycleCount, scale, scaleCount, offset, localRank, localRankSize, commArgs, magic
+#define KERNELS_ARGS_CALL_ALL2ALL()                                                                              \
+    sendDataInput, tokenPerExpertDataInput, sendDataOffsetOutput, recvDataOutput, totalRecvTokens, recvCount,    \
+        recvOffset, maxBs, recvTokensPerExpert, len, numTokens, op, root, cycleCount, scale, scaleCount, offset, \
+        localRank, localRankSize, commArgs, magic
 
 template <typename T>
 class NotifyDispatch
