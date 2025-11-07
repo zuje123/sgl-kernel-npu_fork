@@ -237,7 +237,7 @@ private:
 
     __aicore__ inline void BuildTotalRecvTokens()
     {
-        if (blockIdx > 1) {
+        if (blockIdx > 0) {
             return;
         }
         pipe.InitBuffer(tmpBuf_, Ceil(numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
@@ -253,12 +253,14 @@ private:
         Cast(floatExpTokenCntLt, sendCountTensor, RoundMode::CAST_NONE, numExperts);
         PipeBarrier<PIPE_V>();
         ReduceSum(floatExpTokenSumCntLt, floatExpTokenCntLt, sharedTmpBuffer, numExperts);
-        SyncFunc<AscendC::HardEvent::V_S>();
+        AscendC::SetFlag<HardEvent::V_S>(EVENT_ID0);
+        AscendC::WaitFlag<HardEvent::V_S>(EVENT_ID0);
         int32_t sumVal = static_cast<int32_t>(floatExpTokenSumCntLt.GetValue(0));
         PipeBarrier<PIPE_V>();
         totalCntLt(0) = sumVal;
         PipeBarrier<PIPE_V>();
-        SyncFunc<AscendC::HardEvent::MTE2_MTE3>();
+        AscendC::SetFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
+        AscendC::WaitFlag<HardEvent::MTE2_MTE3>(EVENT_ID0);
 
         // 拷贝到outputGT
         DataCopyExtParams copyParams{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
