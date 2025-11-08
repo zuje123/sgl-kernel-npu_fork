@@ -244,7 +244,11 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
 
     auto send_data_offset = torch::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
     at::Tensor recv_data = torch::empty({num_experts * send_per_group}, at::dtype(at::kInt).device(x.device()));
-
+    at::Tensor total_recv_token_ = torch::empty({1}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor recv_count_ = torch::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor recv_offset_ = torch::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor max_bs_ = torch::empty({1}, at::dtype(at::kInt).device(x.device()));
+    at::Tensor recv_tokens_per_expert_ = torch::empty({num_local_experts}, at::dtype(at::kInt).device(x.device()));
     // get ep name
     char hcom_ep_name[HCOMM_NAME_LEN];
     if (!moe_all_to_all_group_name.empty()) {
@@ -261,7 +265,8 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
                  hcom_ep_name,  // commGroup
                  num_ranks,     // rankSize
                  rank,          // rankId
-                 local_rank_size, local_rank_id, send_data_offset, recv_data);
+                 local_rank_size, local_rank_id, send_data_offset, recv_data, total_recv_token_, recv_count_,
+                 recv_offset_, max_bs_, recv_tokens_per_expert_);
 
     auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
     std::vector<int32_t> local_expert_acc(num_experts, 0);
