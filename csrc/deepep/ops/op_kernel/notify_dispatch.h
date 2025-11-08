@@ -45,7 +45,7 @@ class NotifyDispatch
     constexpr static int64_t MAX_RANK_PER_CORE = 8;
     constexpr static int64_t MULTI_RANK_SIZE = 48;
     constexpr static int64_t MAX_BUFFER_NUMBER = 10;
-
+    constexpr static uint32_t UB_FLAG_SIZE = 8U * 1024U;
     constexpr static int64_t IDLER_CORE = 0;  // Idle core
     constexpr static int64_t PRODUCER_CORE =
         1;  // Producer group, responsible for writing data to shared memory, input->share, or share->share
@@ -234,6 +234,7 @@ private:
         DataCopyPadExtParams<int32_t> DataCopyPadExtParams{false, 0U, 0U, 0U};
         DataCopyPad(recvDataTensor, recvDataOutGt, recvDataParams, DataCopyPadExtParams);
         SyncFunc<AscendC::HardEvent::V_S>();
+        SyncFunc<AscendC::HardEvent::MTE2_S>();
         for (uint32_t expId = 0; expId < numExperts / rankSize; ++expId) {
             for (uint32_t srcRank = 0; srcRank < rankSize; ++srcRank) {
                 uint32_t index = expId * rankSize + srcRank;
@@ -248,6 +249,7 @@ private:
 
     __aicore__ inline void BuildTotalRecvTokens()
     {
+        // 只需要sendCountTensor
         if (blockIdx > 0) {
             return;
         }
@@ -256,10 +258,10 @@ private:
         pipe.InitBuffer(tmpBuf3_, Ceil(numExperts * sizeof(float), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
         pipe.InitBuffer(tmpBuf4_, Ceil(numExperts * sizeof(float), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
 
-        LocalTensor<int32_t> totalCntLt = tempBuf_.Get<int32_t>();
-        LocalTensor<float> floatExpTokenCntLt = tempBuf2_.Get<float>();
-        LocalTensor<float> floatExpTokenSumCntLt = tempBuf3_.Get<float>();
-        LocalTensor<float> sharedTmpBuffer = tempBuf4_.Get<float>();
+        LocalTensor<int32_t> totalCntLt = tmpBuf_.Get<int32_t>();
+        LocalTensor<float> floatExpTokenCntLt = tmpBuf2_.Get<float>();
+        LocalTensor<float> floatExpTokenSumCntLt = tmpBuf3_.Get<float>();
+        LocalTensor<float> sharedTmpBuffer = tmpBuf4_.Get<float>();
         SyncFunc<AscendC::HardEvent::S_V>();
         Cast(floatExpTokenCntLt, sendCountTensor, RoundMode::CAST_NONE, numExperts);
         PipeBarrier<PIPE_V>();
@@ -280,6 +282,7 @@ private:
 
     __aicore__ inline void BuildRecvCount()
     {
+        // 只需要sendCountTensor
         if (blockIdx != 1) {
             return;
         }
@@ -300,6 +303,7 @@ private:
 
     __aicore__ inline void BuildRecvOffset()
     {
+        // 只需要sendOffsetTensor
         if (blockIdx != 2) {
             return;
         }
@@ -312,6 +316,7 @@ private:
 
     __aicore__ inline void BuildMaxBs()
     {
+        // 只需要maxBsNum
         if (blockIdx != 3) {
             return;
         }
@@ -323,11 +328,12 @@ private:
 
     __aicore__ inline void BuildRecvTokenPerExp()
     {
+        // 只需要sendCountTensor
         if (blockIdx != 4) {
             return;
         }
         pipe.InitBuffer(tmpBuf_, Ceil(numExperts / rankSize * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
-        LocalTensor<int32_t> tmpTensor = tempBuf_.Get<int32_t>();
+        LocalTensor<int32_t> tmpTensor = tmpBuf_.Get<int32_t>();
         for (uint32_t expId = 0; expId < numExperts / rankSize; ++expId) {
             int32_t localRecvCount = 0;
             for (uint32_t srcRank = 0; srcRank < rankSize; ++srcRank) {
@@ -555,7 +561,7 @@ FORCE_INLINE_AICORE void NotifyDispatch<T>::InitSmallFullMesh(KERNELS_ARGS_FUN_A
                                (this->magic % PING_PONG_SIZE) * (IPC_BUFF_MAX_SIZE + IPC_DATA_OFFSET);
     }
 
-    pipe.InitBuffer(tBuf, UB_SINGLE_TOTAL_SIZE_MAX);
+    pipe.InitBuffer(tBuf, UB_FLAG_SIZE);
 
     sync.Init(rank, rankSize, shareAddrs, tBuf);
 }
