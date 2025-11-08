@@ -295,8 +295,8 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
 
     EP_HOST_ASSERT(recv_data.dim() == 1 and recv_data.is_contiguous());
     EP_HOST_ASSERT(recv_data.size(0) % num_experts == 0);
-    at::Tensor recv_offset_cpu = torch::empty({num_experts}, options_cpu);
-    at::Tensor recv_count_cpu = torch::empty({num_experts}, options_cpu);
+    // at::Tensor recv_offset_cpu = torch::empty({num_experts}, options_cpu);
+    // at::Tensor recv_count_cpu = torch::empty({num_experts}, options_cpu);
     // auto recv_data_cpu = recv_data.to(at::kCPU);
     // auto recv_data_ptr = recv_data_cpu.data_ptr<int>();
     // auto recv_count_ptr = recv_count_cpu.data_ptr<int>();
