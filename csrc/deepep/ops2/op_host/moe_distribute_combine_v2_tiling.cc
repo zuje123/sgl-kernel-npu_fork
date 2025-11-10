@@ -97,6 +97,7 @@ constexpr uint32_t ASSIST_INFO_DIMS = 1U;
 constexpr uint64_t TILING_KEY_BASE_A2 = 2000UL;
 constexpr uint64_t TILING_KEY_LAYERED_COMM_A2 = 3000UL;
 constexpr uint64_t TILING_KEY_INT8_COMM_QUANT_A2 = 100UL;
+constexpr uint64_t TILING_KEY_ONE_SERVER_A2 = 5000UL;
 constexpr uint32_t ARR_LENGTH = 128U;
 constexpr uint32_t OP_TYPE_ALL_TO_ALL = 8U;      // numeric representation of AlltoAll
 constexpr uint32_t OP_TYPE_REDUCE_SCATTER = 7U;  // numeric representation of AlltoAll
@@ -159,7 +160,8 @@ static void PrintA2TilingDataInfo(MoeDistributeCombineV2Info &info)
 
 static ge::graphStatus MoeDistributeCombineA2CheckAttrAndSetTiling(gert::TilingContext *context,
                                                                    MoeDistributeCombineV2Info &info,
-                                                                   int32_t &commQuantMode, const bool isLayered)
+                                                                   int32_t &commQuantMode, const bool isLayered,
+                                                                   bool isSingleServer)
 {
     auto attrs = context->GetAttrs();
     OP_TILING_CHECK(attrs == nullptr, OP_LOGE(K_INNER_DEBUG, "attrs is null."), return ge::GRAPH_FAILED);
@@ -171,6 +173,7 @@ static ge::graphStatus MoeDistributeCombineA2CheckAttrAndSetTiling(gert::TilingC
     auto tpWorldSizePtr = attrs->GetAttrPointer<int>(ATTR_TP_WORLD_SIZE_INDEX);
     auto tpRankIdPtr = attrs->GetAttrPointer<int>(ATTR_TP_RANK_ID_INDEX);
     auto expertSharedTypePtr = attrs->GetAttrPointer<int>(ATTR_EXPERT_SHARD_TYPE_INDEX);
+    auto sharedExpertNumPtr = attrs->GetAttrPointer<int64_t>(static_cast<int>(ATTR_SHARED_EXPERT_NUM_INDEX));
     auto sharedExpertRankNumPtr = attrs->GetAttrPointer<int>(ATTR_SHARED_EXPERT_RANK_NUM_INDEX);
     auto globalBsPtr = attrs->GetAttrPointer<int>(ATTR_GLOBAL_BS_INDEX);
     auto commQuantModePtr = attrs->GetAttrPointer<int>(ATTR_COMM_QUANT_MODE_INDEX);
@@ -192,6 +195,8 @@ static ge::graphStatus MoeDistributeCombineA2CheckAttrAndSetTiling(gert::TilingC
     OP_TILING_CHECK(epWorldSizePtr == nullptr || *epWorldSizePtr <= 0 || *epWorldSizePtr > MAX_EP_WORLD_SIZE_A2 ||
                         *epWorldSizePtr % RANK_NUM_PER_NODE_A2 != 0,
                     OP_LOGE(K_INNER_DEBUG, "epWorldSize is invalid."), return GRAPH_FAILED);
+    isSingleServer = *epWorldSizePtr <= RANK_NUM_PER_NODE_A2 ? true : false;
+
     OP_TILING_CHECK(epRankIdPtr == nullptr || *epRankIdPtr < 0 || *epRankIdPtr >= *epWorldSizePtr,
                     OP_LOGE(K_INNER_DEBUG, "epRankId is invalid."), return GRAPH_FAILED);
     OP_TILING_CHECK(moeExpertNumPtr == nullptr || *moeExpertNumPtr <= 0 || *moeExpertNumPtr > MAX_MOE_EXPERT_NUMS_A2 ||
@@ -203,6 +208,8 @@ static ge::graphStatus MoeDistributeCombineA2CheckAttrAndSetTiling(gert::TilingC
                     return GRAPH_FAILED);
     OP_TILING_CHECK(sharedExpertRankNumPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "sharedExpertRankNum is null."),
                     return GRAPH_FAILED);
+    OP_TILING_CHECK(sharedExpertNumPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "sharedExpertNumPtr is null."),
+        return ge::GRAPH_FAILED);
     OP_TILING_CHECK(globalBsPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "globalBs is null."), return GRAPH_FAILED);
     OP_TILING_CHECK(commQuantModePtr == nullptr, OP_LOGE(K_INNER_DEBUG, "commQuantMode is null."), return GRAPH_FAILED);
     OP_TILING_CHECK(!isLayered && *commQuantModePtr != static_cast<CommQuantModeType>(CommQuantMode::NON_QUANT),
@@ -317,6 +324,10 @@ static ge::graphStatus MoeDistributeCombineA2CheckShapeAndSetTiling(gert::Tiling
                                 xActiveMaskStorageShape->GetStorageShape().GetDim(1), k),
                         return GRAPH_FAILED);
     }
+
+    // 校验sharedExpertX的维度, 当前未使用
+    const gert::StorageShape *sharedExpertXShape = context->GetOptionalInputShape(SHARED_EXPERT_X_INDEX);
+    info.hasSharedExpertX = (sharedExpertXShape != nullptr);
 
     // copy expert and const expert
     OP_TILING_CHECK(copyExpertNum > 0 && oriXStorageShape == nullptr,
@@ -475,7 +486,7 @@ static ge::graphStatus MoeDistributeCombineCheckCommAlg(gert::TilingContext *con
 }
 
 static uint64_t MoeDistributeCombineA2CalcTilingKey(gert::TilingContext *context, const bool isLayered,
-                                                    const int32_t commQuantMode)
+                                                    const int32_t commQuantMode, const bool isSingleServer)
 {
     uint64_t tilingKey = TILING_KEY_BASE_A2;
     if (isLayered) {
@@ -483,6 +494,9 @@ static uint64_t MoeDistributeCombineA2CalcTilingKey(gert::TilingContext *context
         if (commQuantMode == static_cast<CommQuantModeType>(CommQuantMode::INT8_QUANT)) {
             tilingKey += TILING_KEY_INT8_COMM_QUANT_A2;
         }
+    }
+    if (isSingleServer) {
+        tilingKey += TILING_KEY_ONE_SERVER_A2;
     }
     OP_LOGD(K_INNER_DEBUG, "tilingKey=%lu", tilingKey);
     return tilingKey;
@@ -500,6 +514,7 @@ static ge::graphStatus MoeDistributeCombineA2TilingFuncImpl(gert::TilingContext 
     MoeDistributeCombineV2Info &info = tilingData->moeDistributeCombineV2Info;
 
     bool isLayered = false;
+    bool isSingleServer = false;
     OP_TILING_CHECK(
         MoeDistributeCombineCheckCommAlg(context, isLayered) != ge::GRAPH_SUCCESS,
         VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "MoeDistributeCombineV2 CheckCommAlg Failed"),
@@ -510,7 +525,7 @@ static ge::graphStatus MoeDistributeCombineA2TilingFuncImpl(gert::TilingContext 
         VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "MoeDistributeCombineV2 CheckShapeAndSetTiling Failed"),
         return ge::GRAPH_FAILED);
     OP_TILING_CHECK(
-        MoeDistributeCombineA2CheckAttrAndSetTiling(context, info, commQuantMode, isLayered) != ge::GRAPH_SUCCESS,
+        MoeDistributeCombineA2CheckAttrAndSetTiling(context, info, commQuantMode, isLayered, isSingleServer) != ge::GRAPH_SUCCESS,
         VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "MoeDistributeCombineV2 CheckAttrAndSetTiling Failed"),
         return ge::GRAPH_FAILED);
     OP_TILING_CHECK(MoeDistributeCombineA2GetPlatformInfoAndSetTiling(context, info) != ge::GRAPH_SUCCESS,
@@ -525,7 +540,7 @@ static ge::graphStatus MoeDistributeCombineA2TilingFuncImpl(gert::TilingContext 
     context->SetBlockDim(blockDim);
     context->SetAicpuBlockDim(mc2tiling::AICPU_BLOCK_DIM_A2);
 
-    uint64_t tilingKey = MoeDistributeCombineA2CalcTilingKey(context, isLayered, commQuantMode);
+    uint64_t tilingKey = MoeDistributeCombineA2CalcTilingKey(context, isLayered, commQuantMode, isSingleServer);
     context->SetTilingKey(tilingKey);
     // 2. workspace
     size_t *workSpaces = context->GetWorkspaceSizes(1);
