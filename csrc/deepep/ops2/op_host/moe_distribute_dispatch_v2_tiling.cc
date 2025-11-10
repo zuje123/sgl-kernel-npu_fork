@@ -136,12 +136,13 @@ constexpr size_t USER_WORKSPACE_A2 = 1UL * 1024UL * 1024UL;  // moeExpertNum_ * 
 constexpr uint64_t TILING_KEY_BASE_A2 = 2000000000;
 constexpr uint64_t TILING_KEY_LAYERED_COMM_A2 = 100000000;
 constexpr uint64_t INIT_TILINGKEY_A2 = 1000;
+constexpr uint64_t TILING_KEY_ONE_SERVER_A2 = 10000;
 }  // namespace
 
 namespace optiling {
 // a2函数
 static ge::graphStatus MoeDistributeDispatchA2CheckAttrAndSetTiling(gert::TilingContext *context,
-                                                                    MoeDistributeDispatchV2Info &info)
+                                                                    MoeDistributeDispatchV2Info &info, bool isSingleServer)
 {
     auto attrs = context->GetAttrs();
     OP_TILING_CHECK(attrs == nullptr, OP_LOGE(K_INNER_DEBUG, "attrs is null."), return ge::GRAPH_FAILED);
@@ -153,6 +154,7 @@ static ge::graphStatus MoeDistributeDispatchA2CheckAttrAndSetTiling(gert::Tiling
     auto tpWorldSizePtr = attrs->GetAttrPointer<int>(ATTR_TP_WORLD_SIZE_INDEX);
     auto tpRankIdPtr = attrs->GetAttrPointer<int>(ATTR_TP_RANK_ID_INDEX);
     auto expertSharedTypePtr = attrs->GetAttrPointer<int>(ATTR_EXPERT_SHARD_TYPE_INDEX);
+    auto sharedExpertNumPtr = attrs->GetAttrPointer<int64_t>(static_cast<int>(ATTR_SHARED_EXPERT_NUM_INDEX));
     auto sharedExpertRankNumPtr = attrs->GetAttrPointer<int>(ATTR_SHARED_EXPERT_RANK_NUM_INDEX);
     auto quantModePtr = attrs->GetAttrPointer<int>(ATTR_QUANT_MODE_INDEX);
     auto globalBsPtr = attrs->GetAttrPointer<int>(ATTR_GLOBAL_BS_INDEX);
@@ -172,6 +174,8 @@ static ge::graphStatus MoeDistributeDispatchA2CheckAttrAndSetTiling(gert::Tiling
     OP_TILING_CHECK(epWorldSizePtr == nullptr || *epWorldSizePtr <= 0 || *epWorldSizePtr > MAX_EP_WORLD_SIZE_A2 ||
                         *epWorldSizePtr % RANK_NUM_PER_NODE_A2 != 0,
                     OP_LOGE(K_INNER_DEBUG, "epWorldSize is invalid."), return GRAPH_FAILED);
+    isSingleServer = *epWorldSizePtr <= RANK_NUM_PER_NODE_A2 ? true : false;
+
     OP_TILING_CHECK(epRankIdPtr == nullptr || *epRankIdPtr < 0 || *epRankIdPtr >= *epWorldSizePtr,
                     OP_LOGE(K_INNER_DEBUG, "epRankId is invalid."), return GRAPH_FAILED);
     OP_TILING_CHECK(moeExpertNumPtr == nullptr || *moeExpertNumPtr % *epWorldSizePtr != 0 || *moeExpertNumPtr <= 0 ||
@@ -183,6 +187,8 @@ static ge::graphStatus MoeDistributeDispatchA2CheckAttrAndSetTiling(gert::Tiling
                     return GRAPH_FAILED);
     OP_TILING_CHECK(sharedExpertRankNumPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "sharedExpertRankNum is null."),
                     return GRAPH_FAILED);
+    OP_TILING_CHECK(sharedExpertNumPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "sharedExpertNumPtr is null."),
+        return ge::GRAPH_FAILED);
     OP_TILING_CHECK(quantModePtr == nullptr || (*quantModePtr != UNQUANT_MODE && *quantModePtr != DYNAMIC_QUANT_MODE),
                     OP_LOGE(K_INNER_DEBUG, "quantMode is invalid."), return GRAPH_FAILED);
     OP_TILING_CHECK(globalBsPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "globalBs is null."), return GRAPH_FAILED);
@@ -388,11 +394,15 @@ static ge::graphStatus MoeDistributeDispatchA2CheckCommAlg(gert::TilingContext *
     }
 }
 
-static uint64_t MoeDistributeDispatchA2CalcTilingKey(gert::TilingContext *context, const bool isLayered)
+static uint64_t MoeDistributeDispatchA2CalcTilingKey(gert::TilingContext *context, const bool isLayered,
+                                                     const bool isSingleServer)
 {
     uint64_t tilingKey = TILING_KEY_BASE_A2 + INIT_TILINGKEY_A2;
     if (isLayered) {
         tilingKey += TILING_KEY_LAYERED_COMM_A2;
+    }
+    if (isSingleServer) {
+        tilingKey += TILING_KEY_ONE_SERVER_A2;
     }
 
     auto attrs = context->GetAttrs();
@@ -422,6 +432,7 @@ static ge::graphStatus MoeDistributeDispatchA2TilingFuncImpl(gert::TilingContext
     MoeDistributeDispatchV2Info &info = tilingData->moeDistributeDispatchV2Info;
 
     bool isLayered = false;
+    bool isSingleServer = false;
     OP_TILING_CHECK(
         MoeDistributeDispatchA2CheckCommAlg(context, isLayered) != ge::GRAPH_SUCCESS,
         VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "MoeDistributeDispatchV2 CheckCommAlg Failed"),
@@ -431,7 +442,7 @@ static ge::graphStatus MoeDistributeDispatchA2TilingFuncImpl(gert::TilingContext
                                                     "MoeDistributeDispatchV2 CheckShapeAndSetTiling Failed"),
                     return ge::GRAPH_FAILED);
     OP_TILING_CHECK(
-        MoeDistributeDispatchA2CheckAttrAndSetTiling(context, info) != ge::GRAPH_SUCCESS,
+        MoeDistributeDispatchA2CheckAttrAndSetTiling(context, info, isSingleServer) != ge::GRAPH_SUCCESS,
         VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "MoeDistributeDispatchV2 CheckAttrAndSetTiling Failed"),
         return ge::GRAPH_FAILED);
     OP_TILING_CHECK(MoeDistributeDispatchA2GetPlatformInfoAndSetTiling(context, info) != ge::GRAPH_SUCCESS,
@@ -446,7 +457,7 @@ static ge::graphStatus MoeDistributeDispatchA2TilingFuncImpl(gert::TilingContext
     context->SetBlockDim(blockDim);
     context->SetAicpuBlockDim(mc2tiling::AICPU_BLOCK_DIM_A2);
 
-    uint64_t tilingKey = MoeDistributeDispatchA2CalcTilingKey(context, isLayered);
+    uint64_t tilingKey = MoeDistributeDispatchA2CalcTilingKey(context, isLayered, isSingleServer);
     context->SetTilingKey(tilingKey);
     // 2. workspace
     size_t *workSpaces = context->GetWorkspaceSizes(1);
@@ -457,7 +468,7 @@ static ge::graphStatus MoeDistributeDispatchA2TilingFuncImpl(gert::TilingContext
     // 3. communication
     auto attrs = context->GetAttrs();
     auto group = attrs->GetAttrPointer<char>(static_cast<int>(ATTR_GROUP_EP_INDEX));
-    std::string algConfig = isLayered ? "BatchWrite=level1:hierarchy" : "BatchWrite=level1:fullmesh";
+    std::string algConfig = isLayered ? "BatchWrite=level1:hierarchy" : "BatchWrite=level1:fullmesh"; // TODO: 需要验证单机情况能否开启layer环境变量
     uint32_t opType = 18;  // BatchWrite
 
     AscendC::Mc2CcTilingConfig mc2CcTilingConfig(group, opType, algConfig);
