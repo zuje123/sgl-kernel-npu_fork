@@ -85,10 +85,6 @@ public:
         tpipe_->InitBuffer(numTokensPerExpertBuf_, numTokensPerExpert32AlignIntLen_);
         tpipe_->InitBuffer(isTokenInRankBuf_, isTokenInRank32AlignIntLen_);
         tpipe_->InitBuffer(seenRankBuf_, numRanks_ * sizeof(T));
-        tpipe_->InitBuffer(sendTokenIdxBuf_, sendTokenIdx32AlignIntLen_);
-        tpipe_->InitBuffer(prefixCountPerExpertBuf_, numTokensPerExpert32AlignIntLen_);
-        tpipe_->InitBuffer(intermediateExpertBuf_, numExperts_ * sizeof(T));
-        tpipe_->InitBuffer(tempExpertBuf_, numExperts_ * sizeof(T));
         tpipe_->InitBuffer(sendTokenIdxSmallBuf_, topkIdx32AlignIntLen_);
 
         LocalTensor<int64_t> topkIdxTensor = topkIdxBuf_.AllocTensor<int64_t>();
@@ -96,19 +92,11 @@ public:
         const DataCopyPadExtParams<int64_t> padParams{false, 0U, 0U, 0U};
         DataCopyPad(topkIdxTensor, topkIdxGM_, dataCopyParams, padParams);
         SyncFunc<AscendC::HardEvent::MTE2_S>();
-        LocalTensor<T> sendTokenIdxTensor = sendTokenIdxBuf_.AllocTensor<T>();
         LocalTensor<T> numTokensPerRankTensor = numTokensPerRankBuf_.AllocTensor<T>();
         LocalTensor<T> numTokensPerExpertTensor = numTokensPerExpertBuf_.AllocTensor<T>();
         LocalTensor<T> isTokenInRankTensor = isTokenInRankBuf_.AllocTensor<T>();
         LocalTensor<T> seenRankTensor = seenRankBuf_.AllocTensor<T>();
         LocalTensor<T> sendTokenIdxSmallTensor = sendTokenIdxSmallBuf_.AllocTensor<T>();
-        LocalTensor<T> prefixCountPerExpertTensor = prefixCountPerExpertBuf_.AllocTensor<T>();
-        LocalTensor<T> intermediateExpertTensor = intermediateExpertBuf_.AllocTensor<T>();
-        LocalTensor<T> tempExpertTensor = tempExpertBuf_.AllocTensor<T>();
-        Duplicate<T>(tempExpertTensor, 0, numExperts_);
-        Duplicate<T>(intermediateExpertTensor, 0, numExperts_);
-        Duplicate<T>(sendTokenIdxTensor, 0, sendTokenIdx32AlignIntLen_ / sizeof(T));
-        Duplicate<T>(prefixCountPerExpertTensor, 0, numExperts_);
         Duplicate<T>(numTokensPerRankTensor, 0, numRanks_);
         Duplicate<T>(numTokensPerExpertTensor, 0, numExperts_);
         Duplicate<T>(isTokenInRankTensor, 0, tempTokens_ * numRanks_);
@@ -123,7 +111,6 @@ public:
                 int64_t expert_idx = topkIdxTensor.GetValue(i * numTopk_ + j);
                 uint32_t per_expert_num = numTokensPerExpertTensor.GetValue(expert_idx) + 1;
                 numTokensPerExpertTensor.SetValue(expert_idx, per_expert_num);
-                sendTokenIdxTensor.SetValue(i * numExperts_ + expert_idx, 1);
                 int rank_id = expert_idx / experts_per_rank;
                 if (!seenRankTensor.GetValue(rank_id)) {
                     uint32_t per_rank_num = numTokensPerRankTensor.GetValue(rank_id) + 1;
@@ -149,34 +136,20 @@ public:
         const DataCopyExtParams numTokensPerExpertDataCopyParams{1U, sendSize, 0U, 0U, 0U};
         DataCopyPad(numTokensPerExpertGM_, numTokensPerExpertTensor, numTokensPerExpertDataCopyParams);
         AscendC::SetAtomicNone();
-        SyncFunc<AscendC::HardEvent::MTE3_MTE2>();
+        PipeBarrier<PIPE_MTE3>();
         SyncAll<true>();
+        SyncFunc<AscendC::HardEvent::MTE3_MTE2>();
         const DataCopyPadExtParams<T> tempPadParams{false, 0U, 0U, 0U};
         DataCopyPad(numTokensPerExpertTensor, tempExpertGM_[coreIdx_ * numExperts_], tempExpertDataCopyParams,
                     tempPadParams);
 
-        DataCopy(prefixCountPerExpertTensor, numTokensPerExpertTensor, numExperts_);
-        SyncFunc<AscendC::HardEvent::MTE2_V>();
-        for (int i = 0; i < tempTokens_; ++i) {
-            DataCopy(intermediateExpertTensor, sendTokenIdxTensor[i * numExperts_], numExperts_);
-            PipeBarrier<PIPE_V>();
-            AscendC::Mul(sendTokenIdxTensor[i * numExperts_], prefixCountPerExpertTensor, intermediateExpertTensor,
-                         numExperts_);
-            PipeBarrier<PIPE_V>();
-            DataCopy(tempExpertTensor, sendTokenIdxTensor[i * numExperts_], numExperts_);
-            PipeBarrier<PIPE_V>();
-            AscendC::Add(sendTokenIdxTensor[i * numExperts_], tempExpertTensor, intermediateExpertTensor, numExperts_);
-            PipeBarrier<PIPE_V>();
-            DataCopy(tempExpertTensor, prefixCountPerExpertTensor, numExperts_);
-            PipeBarrier<PIPE_V>();
-            AscendC::Add(prefixCountPerExpertTensor, intermediateExpertTensor, tempExpertTensor, numExperts_);
-            PipeBarrier<PIPE_V>();
-        }
-        SyncFunc<AscendC::HardEvent::V_MTE3>();
+        SyncFunc<AscendC::HardEvent::MTE2_S>();
         for (int i = 0; i < tempTokens_; ++i) {
             for (int j = 0; j < numTopk_; ++j) {
                 int64_t expert_idx = topkIdxTensor.GetValue(i * numTopk_ + j);
-                sendTokenIdxSmallTensor(i * numTopk_ + j) = sendTokenIdxTensor(i * numExperts_ + expert_idx) - 1;
+                T valT = numTokensPerExpertTensor(expert_idx);
+                sendTokenIdxSmallTensor(i * numTopk_ + j) = valT;
+                numTokensPerExpertTensor(expert_idx) = valT + 1;
             }
         }
         SyncFunc<AscendC::HardEvent::S_MTE3>();
@@ -198,10 +171,6 @@ private:
     TBuf<> numTokensPerExpertBuf_;
     TBuf<> isTokenInRankBuf_;
     TBuf<> seenRankBuf_;
-    TBuf<> sendTokenIdxBuf_;
-    TBuf<> prefixCountPerExpertBuf_;
-    TBuf<> intermediateExpertBuf_;
-    TBuf<> tempExpertBuf_;
     TBuf<> sendTokenIdxSmallBuf_;
 
     TPipe *tpipe_{nullptr};
