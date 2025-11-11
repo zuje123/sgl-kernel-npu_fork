@@ -116,11 +116,13 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     7. The server offset of tokens received by each expert from this NPU.
        size:[numExpert, MAX_BS]
     */
+    auto send_token_idx_small = at::zeros({num_tokens, num_topk}, at::dtype(at::kInt).device(device));
     auto notify_send_data = at::zeros({notify_send_data_size}, at::dtype(at::kInt).device(device));
     EXEC_NPU_CMD(aclnnDispatchLayout, new_topk_idx, num_tokens, num_ranks, num_experts, num_topk, local_ranksize,
-                 num_tokens_per_rank, num_tokens_per_expert, is_token_in_rank, notify_send_data);
+                 num_tokens_per_rank, num_tokens_per_expert, is_token_in_rank, notify_send_data, send_token_idx_small);
 
     this->notify_send_data = notify_send_data;
+    this->send_token_idx_small = send_token_idx_small;
     this->notify_send_data_size = notify_send_data_size;
 
     std::optional<torch::Tensor> num_tokens_per_rdma_rank = std::nullopt;
@@ -279,7 +281,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
                  rank,          // rankId
                  local_rank_size, local_rank_id, send_data_offset, recv_data, total_recv_token_, recv_count_,
                  recv_offset_, max_bs_, recv_tokens_per_expert_);
-
+    auto send_token_idx_small = this->send_token_idx_small;
     auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
     std::vector<int32_t> local_expert_acc(num_experts, 0);
     auto send_token_idx_cpu = torch::empty({num_tokens, num_topk}, options_cpu);
@@ -353,7 +355,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     // auto recv_offset = recv_offset_cpu.to(x.device());
     // auto recv_count = recv_count_cpu.to(x.device());
 
-    EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, send_token_idx, recv_offset_,
+    EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, send_token_idx_small, recv_offset_,
                  recv_count_, hcom_ep_name,
                  num_ranks,  // rankSize
                  rank,       // rankId
