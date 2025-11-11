@@ -86,13 +86,13 @@ extern "C" __global__ __aicore__ void moe_distribute_combine_v2(
         } else {
             assert(false, "The driver version is too low. It should not be lower than 25.0.rc1.1.\n");
         }
-    } else if (TILING_KEY_IS(5000)) { // single server
+    } else if (TILING_KEY_IS(5000)) {  // single server
         printf("====enter combine single...\n");
         GET_TILING_DATA_WITH_STRUCT(MoeDistributeCombineV2TilingData, tilingData, tilingGM);
 
         MoeDistributeCombineV2Single<DTYPE_EXPAND_X, DTYPE_X, int32_t, false, false, false> op;
-        op.Init(expandX, expertIds, assistInfoForCombine, epSendCount, tpSendCount, scales, xActiveMask,
-            sharedExpertX, XOut, workspaceGM, &pipe, tilingGM);
+        op.Init(expandX, expertIds, assistInfoForCombine, epSendCount, tpSendCount, scales, xActiveMask, sharedExpertX,
+                XOut, workspaceGM, &pipe, tilingGM);
         op.Process();
     }
 #endif
