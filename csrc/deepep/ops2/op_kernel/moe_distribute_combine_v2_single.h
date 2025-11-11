@@ -15,7 +15,7 @@ namespace MoeDistributeCombineA2Impl {
 #define TemplateMC2TypeA2SingleClass typename ExpandXType, typename XType, typename ExpandIdxType, bool IsNeedReduceScatter, bool IsShareExpert, bool IsInt8Quant
 #define TemplateMC2TypeA2SingleFunc ExpandXType, XType, ExpandIdxType, IsNeedReduceScatter, IsShareExpert, IsInt8Quant
 
-// #define ENABLE_PRINT
+#define ENABLE_PRINT
 #ifdef ENABLE_PRINT
     #define CAM_PRINT(fmt, ...) do { \
         AscendC::printf(fmt, ##__VA_ARGS__); \
@@ -407,11 +407,11 @@ __aicore__ inline void MoeDistributeCombineV2Single<TemplateMC2TypeA2SingleFunc>
            "The HCCL_BUFFSIZE is %lluMB, the min value should be %lluMB. \
         epWorldSize:%u, epRankId:%u, moeExpertNum:%u, globalBs:%u, bs:%u, k:%u, h:%u, aivNum:%u, \
         totalUbSize:%llu\n",
-           realWinSize / MB_SIZE, needSize / MB_SIZE, tilingData->moeDistributeCombineV2Info.epWorldSize,
-           tilingData->moeDistributeCombineV2Info.epRankId, tilingData->moeDistributeCombineV2Info.moeExpertNum,
-           tilingData->moeDistributeCombineV2Info.globalBs, tilingData->moeDistributeCombineV2Info.bs,
-           tilingData->moeDistributeCombineV2Info.k, tilingData->moeDistributeCombineV2Info.h,
-           tilingData->moeDistributeCombineV2Info.aivNum, tilingData->moeDistributeCombineV2Info.totalUbSize);
+           realWinSize / MB_SIZE, needSize / MB_SIZE, tilingData.moeDistributeCombineV2Info.epWorldSize,
+           tilingData.moeDistributeCombineV2Info.epRankId, tilingData.moeDistributeCombineV2Info.moeExpertNum,
+           tilingData.moeDistributeCombineV2Info.globalBs, tilingData.moeDistributeCombineV2Info.bs,
+           tilingData.moeDistributeCombineV2Info.k, tilingData.moeDistributeCombineV2Info.h,
+           tilingData.moeDistributeCombineV2Info.aivNum, tilingData.moeDistributeCombineV2Info.totalUbSize);
 
     if constexpr (IsInt8Quant) {
         InitInt8Quant();
