@@ -283,7 +283,7 @@ private:
         sendSize = tempTokens_ * numExperts_ * sizeof(T);
         const DataCopyExtParams sendTokenIdxDataCopyParams{1U, sendSize, 0U, 0U, 0U};
         const DataCopyExtParams sendTokenIdxSmallDataCopyParams{
-            1U, static_cast<int32_t>(tempTokens_ * numTopk_ * sizeof(T)), 0U, 0U, 0U};
+            1U, static_cast<uint32_t>(tempTokens_ * numTopk_ * sizeof(T)), 0U, 0U, 0U};
         DataCopyPad(sendTokenIdxGM_, sendTokenIdxTensor, sendTokenIdxDataCopyParams);
         sendSize = tempTokens_ * serverNum_ * sizeof(T);
         const DataCopyExtParams localTokenServerOffsetParams{1U, sendSize, 0U, 0U, 0U};
