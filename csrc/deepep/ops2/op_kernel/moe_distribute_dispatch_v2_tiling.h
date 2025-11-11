@@ -45,6 +45,7 @@ struct MoeDistributeDispatchV2Info {
     bool reserved2;                // reserved
     bool reserved3;                // reserved
     uint64_t totalUbSize;          // totalUbSize
+    uint64_t totalWinSize;
     uint32_t expertTokenNumsType;  // expert token nums type, support 0: cumsum mode, 1: count mode
     int32_t zeroComputeExpertNum;  // sum of zero、copy and const expert nums
 };

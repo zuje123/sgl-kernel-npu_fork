@@ -11,7 +11,7 @@ namespace MoeDistributeDispatchA2Impl {
 #define TemplateMC2TypeA2SingleClass typename XType, typename ExpandXOutType, bool StaticQuant, bool DynamicQuant, bool IsSmoothScaleExist, bool IsNeedAllgater, bool IsShareExpertRank
 #define TemplateMC2TypeA2SingleFunc XType, ExpandXOutType, StaticQuant, DynamicQuant, IsSmoothScaleExist, IsNeedAllgater, IsShareExpertRank
 
-// #define ENABLE_PRINT
+#define ENABLE_PRINT
 #ifdef ENABLE_PRINT
     #define CAM_PRINT(fmt, ...) do { \
         AscendC::printf(fmt, ##__VA_ARGS__); \
