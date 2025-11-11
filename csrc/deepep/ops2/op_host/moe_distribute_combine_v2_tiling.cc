@@ -844,7 +844,7 @@ static ge::graphStatus MoeDistributeCombineA2SingleTilingFuncImpl(gert::TilingCo
     SetHCommCfg(context, tilingData, groupEp, groupTp);
 
     uint64_t tpWorldSize = static_cast<uint64_t>(tilingData->moeDistributeCombineV2Info.tpWorldSize);
-    uint64_t tilingKey = INIT_TILINGKEY;
+    uint64_t tilingKey = TILING_KEY_ONE_SERVER_A2; // single server
     CalTilingKey(tilingKey, tpWorldSize, isShared, commQuantMode);
     OP_LOGD(nodeName, "tilingKey is %lu", tilingKey);
     context->SetTilingKey(tilingKey);

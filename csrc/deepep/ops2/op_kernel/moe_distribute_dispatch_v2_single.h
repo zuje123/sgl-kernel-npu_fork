@@ -5,6 +5,7 @@
 #include "kernel_tiling/kernel_tiling.h"
 #include "moe_distribute_base.h"
 #include "moe_distribute_dispatch_v2_tiling.h"
+#include "check_winsize.h"
 
 namespace MoeDistributeDispatchA2Impl {
 
@@ -279,8 +280,12 @@ __aicore__ inline void MoeDistributeDispatchV2Single<TemplateMC2TypeA2SingleFunc
     // windowInGM_ = hccl_.GetWindowsInAddr(epRankId_);
     // windowOutGM_ = hccl_.GetWindowsOutAddr(epRankId_);
     epRankId_ = tilingData.moeDistributeDispatchV2Info.epRankId;
-    totalWinSize_ = static_cast<uint64_t>(winContext_[COMM_EP_IDX]->winSize);
     CAM_PRINT("[Init] mark1, rank:%d, aivId:%d...\n", epRankId_, aivId_);
+
+    // 检查hcclwinsize是否越界
+    totalWinSize_ = static_cast<uint64_t>(tilingData.moeDistributeDispatchV2Info.totalWinSize);
+    auto realWinSize = winContext_[COMM_EP_IDX]->winSize;
+    CheckWindowSize(totalWinSize_, realWinSize, tpipe_, expandXOut);
 
     GlobalTensor<int32_t> selfDataStatusTensor;
     // GM_ADDR statusDataSpaceGm = (GM_ADDR)(winContext_[0]->localWindowsExp);
@@ -346,30 +351,6 @@ __aicore__ inline void MoeDistributeDispatchV2Single<TemplateMC2TypeA2SingleFunc
     dealRankPerCore_ = (recvWinBlockNum_ + aivNum_ - 1) / aivNum_;
     stateOffset_ = STATE_OFFSET;
 
-    uint32_t localMoeExpertNum = moeExpertNum_ / (epWorldSize_ - sharedExpertRankNum_);
-    // combine数据区 token首地址对齐512
-    uint64_t tokenNeedSizeCombine = ((axisH_ * MAX_OUT_DTYPE_SIZE  + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
-    // dispatch数据区 token首对齐512，有效token长度h_align_32b + scale(32b) + 三元组(3*4b)
-    uint64_t tokenActualLen = ((axisH_ * MAX_OUT_DTYPE_SIZE  + UB_ALIGN - 1UL) / UB_ALIGN) * UB_ALIGN + SCALE_EXPAND_IDX_BUFFER;
-    uint64_t tokenNeedSizeDispatch = ((tokenActualLen + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
-    // 检查hcclwinsize是否越界
-    // auto realWinSize = winContext_[COMM_EP_IDX]->winSize; // totalWinSize_
-    // CheckWindowSize(totalWinSize_, realWinSize, tpipe_, expandXOut);
-    uint64_t needWinSize = ((axisMaxBS_ * tokenNeedSizeDispatch * epWorldSize_ * static_cast<uint64_t>(localMoeExpertNum))
-        + (axisMaxBS_ * tokenNeedSizeCombine * (axisK_ + static_cast<uint64_t>(sharedExpertNum_)))) * DOUBLE_DATA_BUFFER;
-    
-    assert(totalWinSize_ >= needWinSize,
-           "The HCCL_BUFFSIZE is %lluMB, the min value should be %lluMB. \
-        epWorldSize:%u, epRankId:%u, moeExpertNum:%u, quantMode:%u, globalBs:%u, bs:%u, k:%u, h:%u, aivNum:%u, \
-        isQuant:%d, totalUbSize:%llu, expertTokenNumsType:%u\n",
-           totalWinSize_ / MB_SIZE, needWinSize / MB_SIZE, tilingData.moeDistributeDispatchV2Info.epWorldSize,
-           tilingData.moeDistributeDispatchV2Info.epRankId, tilingData.moeDistributeDispatchV2Info.moeExpertNum,
-           tilingData.moeDistributeDispatchV2Info.quantMode, tilingData.moeDistributeDispatchV2Info.globalBs,
-           tilingData.moeDistributeDispatchV2Info.bs, tilingData.moeDistributeDispatchV2Info.k,
-           tilingData.moeDistributeDispatchV2Info.h, tilingData.moeDistributeDispatchV2Info.aivNum,
-           tilingData.moeDistributeDispatchV2Info.isQuant, tilingData.moeDistributeDispatchV2Info.totalUbSize,
-           tilingData.moeDistributeDispatchV2Info.expertTokenNumsType);
-
     CAM_PRINT("[Init] mark1-2-1, rank:%d, aivId:%d...\n", epRankId_, aivId_);
 
     DataCacheCleanAndInvalid<int32_t, CacheLine::SINGLE_CACHE_LINE, DcciDst::CACHELINE_OUT>(selfDataStatusTensor);
@@ -428,7 +409,7 @@ __aicore__ inline void MoeDistributeDispatchV2Single<TemplateMC2TypeA2SingleFunc
     // 当前tpWin区划分为前后两半区，连续两次dispatch，切换半区, combine 数据区使用前面，
     // 即axisMaxBS_ * (axisK_ + sharedExpertNum_) * hSizeAlignCombine, dispatch使用后面
     uint64_t hSizeAlignCombine = Ceil(axisH_ * sizeof(XType), WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
-    winDataSizeOffset_ = dataState_ * (totalWinSize_ / 2)
+    winDataSizeOffset_ = dataState_ * (tilingData.moeDistributeDispatchV2Info.totalWinSize / 2)
                          + axisMaxBS_ * (axisK_ + sharedExpertNum_) * hSizeAlignCombine;
     windowGM_ = GetWindAddrByRankId(COMM_EP_IDX, epRankId_);
 
