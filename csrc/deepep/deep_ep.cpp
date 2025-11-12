@@ -278,31 +278,8 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
                  local_rank_size, local_rank_id, send_data_offset, recv_data, total_recv_token_, recv_count_,
                  recv_offset_, max_bs_, recv_tokens_per_expert_);
     auto send_token_idx_small = this->send_token_idx_small;
-    auto options_cpu = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
-    std::vector<int32_t> local_expert_acc(num_experts, 0);
-    auto send_token_idx_cpu = torch::empty({num_tokens, num_topk}, options_cpu);
-    auto send_token_idx_ptr = send_token_idx_cpu.data_ptr<int>();
-
-    auto topk_idx_cpu = new_topk_idx.to(at::kCPU);
-    auto topk_idx_ptr = topk_idx_cpu.data_ptr<int64_t>();
-    for (int i = 0; i < num_tokens; ++i) {
-        for (int j = 0; j < num_topk; ++j) {
-            int64_t expert_idx = topk_idx_ptr[i * num_topk + j];
-            if (expert_idx >= 0) {
-                int32_t cnt = local_expert_acc[expert_idx];
-                send_token_idx_ptr[i * num_topk + j] = cnt;
-                local_expert_acc[expert_idx]++;
-            }
-        }
-    }
-    auto send_token_idx = send_token_idx_cpu.to(x.device());
-
-    auto gbs_cpu = max_bs_.to(at::kCPU);
-    auto gbs_ptr = gbs_cpu.data_ptr<int>();
-    int64_t gBs = gbs_ptr[0] * num_ranks;
-    auto trt_cpu = total_recv_token_.to(at::kCPU);
-    auto trt_ptr = trt_cpu.data_ptr<int>();
-    int64_t trt = trt_ptr[0];
+    int64_t gBs = max_bs_.item<int>() * num_ranks;
+    int64_t trt = total_recv_token_.item<int>();
     int num_recv_tokens = (trt == 0) ? 1 : trt;
     auto expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
                                  : torch::empty({num_recv_tokens, hidden}, x.options());
@@ -320,7 +297,6 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
                  hcom_ep_name, tp_size, tp_rank, num_experts, quant_mode, gBs, expandx_out, dynamic_scales_out,
                  expand_idx_out, dispatch_wait_recv_cost_stats_out);
 
-    // auto expand_idx_out_cpu = expand_idx_out.to(torch::kCPU);
     // Return values
     return {expandx_out,
             dynamic_scales_out,
