@@ -317,44 +317,6 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         recv_topk_weights = at::empty({trt, num_topk}, topk_weights->options());
     }
 
-    // EP_HOST_ASSERT(recv_data.dim() == 1 and recv_data.is_contiguous());
-    // EP_HOST_ASSERT(recv_data.size(0) % num_experts == 0);
-    // at::Tensor recv_offset_cpu = torch::empty({num_experts}, options_cpu);
-    // at::Tensor recv_count_cpu = torch::empty({num_experts}, options_cpu);
-    // auto recv_data_cpu = recv_data.to(at::kCPU);
-    // auto recv_data_ptr = recv_data_cpu.data_ptr<int>();
-    // auto recv_count_ptr = recv_count_cpu.data_ptr<int>();
-    // auto recv_offset_ptr = recv_offset_cpu.data_ptr<int>();
-    // int total_recv_tokens = 0;
-    // int num_max_dispatch_tokens_per_rank = 0;
-    // std::vector<int> num_recv_tokens_per_expert_list;
-
-    // for (int64_t local_e = 0; local_e < num_local_experts; ++local_e) {
-    //     int64_t local_expert_recv_tokens = 0;
-    //     for (int64_t src_rank = 0; src_rank < num_ranks; ++src_rank) {
-    //         int64_t index = local_e * num_ranks + src_rank;
-    //         int64_t pair_idx = send_per_group * (src_rank * num_local_experts + local_e);
-
-    //         int recv_cnt = recv_data_ptr[pair_idx];             // count from this src_rank for this global_expert
-    //         int recv_off = recv_data_ptr[pair_idx + 1];         // offset in that src_rank's window
-    //         int send_num_tokens = recv_data_ptr[pair_idx + 2];  // all bs from rank
-
-    //         total_recv_tokens += recv_cnt;
-    //         recv_count_ptr[index] = total_recv_tokens;
-    //         recv_offset_ptr[index] = recv_off;
-    //         num_max_dispatch_tokens_per_rank = std::max(num_max_dispatch_tokens_per_rank, send_num_tokens);
-
-    //         local_expert_recv_tokens += recv_cnt;
-    //     }
-    //     num_recv_tokens_per_expert_list.push_back(local_expert_recv_tokens);
-    // }
-
-    // int64_t global_bs = static_cast<int64_t>(
-    //     std::max(num_max_dispatch_tokens_per_rank * num_ranks, static_cast<int64_t>(num_worst_tokens)));
-
-    // auto recv_offset = recv_offset_cpu.to(x.device());
-    // auto recv_count = recv_count_cpu.to(x.device());
-
     EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, send_token_idx_small, recv_offset_,
                  recv_count_, hcom_ep_name,
                  num_ranks,  // rankSize
