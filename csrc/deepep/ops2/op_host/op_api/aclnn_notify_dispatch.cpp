@@ -34,7 +34,7 @@ aclnnStatus aclnnNotifyDispatchGetWorkspaceSize(const aclTensor *sendData, const
 aclnnStatus aclnnNotifyDispatch(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)
 {
     if (NnopbaseSetHcclServerType) {
-        NnopbaseSetHcclServerType(executor, NNOPBASE_HCCL_SERVER_TYPE_MTE);
+        NnopbaseSetHcclServerType(executor, NNOPBASE_HCCL_SERVER_TYPE_AICPU);
     }
     return aclnnInnerNotifyDispatch(workspace, workspaceSize, executor, stream);
 }

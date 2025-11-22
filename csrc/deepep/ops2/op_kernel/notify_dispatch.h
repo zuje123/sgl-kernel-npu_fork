@@ -42,9 +42,9 @@ class NotifyDispatch
     constexpr static int64_t SHARE_QUE_DEPTH = 1;         // Depth of a single shared queue
     constexpr static int64_t RANK_NUM_PER_NODE = 16;
     constexpr static int64_t SIO_NUM = 2;  // Depth of a single shared queue
-    constexpr static int64_t MAX_CORE_NUM = 48;
+    constexpr static int64_t MAX_CORE_NUM = 40;
     constexpr static int64_t MAX_RANK_PER_CORE = 8;
-    constexpr static int64_t MULTI_RANK_SIZE = 48;
+    constexpr static int64_t MULTI_RANK_SIZE = 40;
     constexpr static int64_t MAX_BUFFER_NUMBER = 10;
     constexpr static uint32_t UB_FLAG_SIZE = 8U * 1024U;
     constexpr static int64_t IDLER_CORE = 0;  // Idle core
@@ -224,7 +224,7 @@ private:
         }
     }
 
-        __aicore__ inline void ReorderOutput()
+    __aicore__ inline void ReorderOutput()
     {
         recvDataTensor = recvDataBuf.Get<int32_t>();
         DataCopyExtParams recvDataParams = {1U, static_cast<uint32_t>(recvDataAlignLen), 0, 0, 0};
@@ -596,7 +596,7 @@ FORCE_INLINE_AICORE void NotifyDispatch<T>::InitSmallFullMesh(KERNELS_ARGS_FUN_A
                                (this->magic % PING_PONG_SIZE) * (IPC_BUFF_MAX_SIZE + IPC_DATA_OFFSET);
     }
 
-    pipe.InitBuffer(tBuf, UB_FLAG_SIZE);
+    pipe.InitBuffer(tBuf, UB_SINGLE_TOTAL_SIZE_MAX);
 
     sync.Init(rank, rankSize, shareAddrs, tBuf);
 }
