@@ -229,6 +229,7 @@ private:
         recvDataTensor = recvDataBuf.Get<int32_t>();
         DataCopyExtParams recvDataParams = {1U, static_cast<uint32_t>(recvDataAlignLen), 0, 0, 0};
         DataCopyPadExtParams<int32_t> DataCopyPadExtParams{false, 0U, 0U, 0U};
+        SyncFunc<AscendC::HardEvent::MTE3_MTE2>();
         DataCopyPad(recvDataTensor, recvDataOutGt, recvDataParams, DataCopyPadExtParams);
     }
 
@@ -596,7 +597,7 @@ FORCE_INLINE_AICORE void NotifyDispatch<T>::InitSmallFullMesh(KERNELS_ARGS_FUN_A
                                (this->magic % PING_PONG_SIZE) * (IPC_BUFF_MAX_SIZE + IPC_DATA_OFFSET);
     }
 
-    pipe.InitBuffer(tBuf, UB_SINGLE_TOTAL_SIZE_MAX);
+    pipe.InitBuffer(tBuf, UB_FLAG_SIZE);
 
     sync.Init(rank, rankSize, shareAddrs, tBuf);
 }
