@@ -868,9 +868,7 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
     at::Tensor activation_scale, weight_scale, group_list;
     at::Tensor x_active_mask;
-    if (soc_version == op::SocVersion::ASCEND910B) {
-        x_active_mask = (new_topk_idx >= 0).to(torch::kBool);
-    }
+
     int64_t tp_world_size = 1;
     int64_t tp_rankId = 0;
     int64_t expert_shared_type = 0;
