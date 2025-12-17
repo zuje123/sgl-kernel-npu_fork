@@ -17,7 +17,7 @@
 #include "error_log.h"
 #include "graph/utils/type_utils.h"
 #include "register/op_def_registry.h"
-#include "mc2_tiling_utils.h"
+// #include "mc2_tiling_utils.h"
 #include "../op_kernel/cam_moe_dispatch_normal_tiling.h"
 #include "tiling_args.h"
 
@@ -28,15 +28,12 @@ using namespace Moe;
 namespace {
 constexpr uint32_t X_INDEX = 0U;
 constexpr uint32_t EXPERT_IDS_INDEX = 1U;
-constexpr uint32_t SEND_OFFSET_INDEX = 2U;
-constexpr uint32_t SEND_TOKENIDX_INDEX = 3U;
-constexpr uint32_t RECV_OFFSET_INDEX = 4U;
-constexpr uint32_t RECV_COUNT_INDEX = 5U;
+constexpr uint32_t SEND_TOKENIDX_INDEX = 2U;
+constexpr uint32_t PUT_OFFSET_INDEX = 3U;
 
 constexpr uint32_t OUTPUT_EXPAND_X_INDEX = 0U;
 constexpr uint32_t OUTPUT_DYNAMIC_SCALES_INDEX = 1U;
-constexpr uint32_t OUTPUT_ASSIST_INFO_INDEX = 2U;
-constexpr uint32_t OUTPUT_WAIT_RECV_COST_INDEX = 3U;
+constexpr uint32_t OUTPUT_WAIT_RECV_COST_INDEX = 2U;
 
 constexpr uint32_t ATTR_GROUP_EP_INDEX = 0;
 constexpr uint32_t ATTR_EP_WORLD_SIZE_INDEX = 1;
@@ -47,6 +44,7 @@ constexpr uint32_t ATTR_TP_RANK_ID_INDEX = 5;
 constexpr uint32_t ATTR_MOE_EXPERT_NUM_INDEX = 6;
 constexpr uint32_t ATTR_QUANT_MODE_INDEX = 7;
 constexpr uint32_t ATTR_GLOBAL_BS_INDEX = 8;
+constexpr uint32_t ATTR_SHMEM_PTR_INDEX = 9;
 
 constexpr uint32_t TWO_DIMS = 2;
 constexpr uint32_t ONE_DIM = 1;
@@ -143,14 +141,6 @@ static bool CheckTensorDim(gert::TilingContext *context, const char *nodeName, c
         OP_LOGD(nodeName, "dynamicScales dim0 = %ld", dynamicScalesStorageShape->GetStorageShape().GetDim(0));
     }
 
-    const gert::StorageShape *assistInfoStorageShape = context->GetOutputShape(OUTPUT_ASSIST_INFO_INDEX);
-    OP_TILING_CHECK(assistInfoStorageShape == nullptr, OP_LOGE(nodeName, "assistInfoShape is null."), return false);
-    OP_TILING_CHECK(assistInfoStorageShape->GetStorageShape().GetDimNum() != ONE_DIM,
-                    OP_LOGE(nodeName, "assistInfoShape dims must be 1, but current dim num is %lu.",
-                            assistInfoStorageShape->GetStorageShape().GetDimNum()),
-                    return false);
-    OP_LOGD(nodeName, "assistInfoForCombine dim0 = %ld", assistInfoStorageShape->GetStorageShape().GetDim(0));
-
     if (isEnableDiagnose) {
         const gert::StorageShape *waitRecvcostStatsStorageShape = context->GetOutputShape(OUTPUT_WAIT_RECV_COST_INDEX);
         OP_TILING_CHECK(waitRecvcostStatsStorageShape == nullptr,
@@ -200,12 +190,6 @@ static bool CheckTensorDataType(gert::TilingContext *context, const char *nodeNa
                         return false);
     }
 
-    auto assistInfoDesc = context->GetOutputDesc(OUTPUT_ASSIST_INFO_INDEX);
-    OP_TILING_CHECK(assistInfoDesc == nullptr, OP_LOGE(nodeName, "assistInfoDesc is null."), return false);
-    OP_TILING_CHECK(assistInfoDesc->GetDataType() != ge::DT_INT32,
-                    OP_LOGE(nodeName, "assistInfoForCombine dataType is invalid, dataType should be int32, but is ."),
-                    return false);
-
     if (isEnableDiagnose) {
         auto waitRecvCostStatsDesc = context->GetOutputDesc(OUTPUT_WAIT_RECV_COST_INDEX);
         OP_TILING_CHECK(waitRecvCostStatsDesc == nullptr, OP_LOGE(nodeName, "dispatch waitRecvCostStatsDesc is null."),
@@ -246,12 +230,6 @@ static bool CheckTensorFormat(gert::TilingContext *context, const char *nodeName
                             ge::FORMAT_FRACTAL_NZ,
                         OP_LOGE(nodeName, "dynamicScales format is invalid."), return false);
     }
-
-    auto assistInfoDesc = context->GetOutputDesc(OUTPUT_ASSIST_INFO_INDEX);
-    OP_TILING_CHECK(assistInfoDesc == nullptr, OP_LOGE(nodeName, "assistInfoDesc is null."), return false);
-    OP_TILING_CHECK(
-        static_cast<ge::Format>(ge::GetPrimaryFormat(assistInfoDesc->GetStorageFormat())) == ge::FORMAT_FRACTAL_NZ,
-        OP_LOGE(nodeName, "assistInfoForCombine format is invalid."), return false);
 
     if (isEnableDiagnose) {
         auto waitRecvCostStatsDesc = context->GetOutputDesc(OUTPUT_WAIT_RECV_COST_INDEX);
@@ -390,8 +368,17 @@ static ge::graphStatus CheckAttrs(gert::TilingContext *context, const char *node
     OP_TILING_CHECK(*globalBsPtr <= 0,
                     OP_LOGE(nodeName, "globalBS is invalid, should be positive, but got globalBS=%ld.", *globalBsPtr),
                     return ge::GRAPH_FAILED);
-
     tilingData.camMoeDispatchNormalInfo.globalBs = static_cast<uint32_t>(*globalBsPtr);
+
+    // 校验shmemPtr
+    auto shmemPtrPtr = attrs->GetAttrPointer<int64_t>(ATTR_SHMEM_PTR_INDEX);
+    OP_TILING_CHECK(shmemPtrPtr == nullptr, OP_LOGE(nodeName, "shmemPtrPtr is nullptr."), return ge::GRAPH_FAILED);
+    OP_LOGD(nodeName, "CamMoeDispatchNormal *shmemPtrPtr = %ld\n", *shmemPtrPtr);
+    OP_TILING_CHECK(
+        *shmemPtrPtr <= 0,
+        OP_LOGE(nodeName, "shmemPtr is invalid, should be shmem virtual address, but got shmemPtr=%ld.", *shmemPtrPtr),
+        return ge::GRAPH_FAILED);
+    tilingData.shmemPtr = static_cast<uint64_t>(*shmemPtrPtr);
 
     return ge::GRAPH_SUCCESS;
 }
@@ -451,9 +438,6 @@ static ge::graphStatus CheckTensorShape(gert::TilingContext *context, const char
         const int64_t dynamicScalesDim0 = dynamicScalesStorageShape->GetStorageShape().GetDim(0);
     }
 
-    // 校验assistInfo的维度
-    const gert::StorageShape *assistInfoStorageShape = context->GetOutputShape(OUTPUT_ASSIST_INFO_INDEX);
-    const int64_t assistInfoDim0 = assistInfoStorageShape->GetStorageShape().GetDim(0);
     return ge::GRAPH_SUCCESS;
 }
 
@@ -478,26 +462,6 @@ static void CalTilingKey(uint64_t &tilingKey, const uint32_t quantMode, const ui
     }
 
     return;
-}
-
-static void SetHcommCfg(const gert::TilingContext *context, CamMoeDispatchNormalTilingData *tiling,
-                        const std::string groupEp, const std::string groupTp)
-{
-    const char *nodeName = context->GetNodeName();
-    OP_LOGD(nodeName, "CamMoeDispatchNormal groupEp = %s, groupTp = %s", groupEp.c_str(), groupTp.c_str());
-    uint32_t opType1 = OP_TYPE_ALL_TO_ALL;
-    uint32_t opType2 = OP_TYPE_ALL_GATHER;
-    std::string algConfigAllToAllStr = "AlltoAll=level0:fullmesh;level1:pairwise";
-    std::string algConfigAllGatherStr = "AllGather=level0:ring";
-
-    AscendC::Mc2CcTilingConfig mc2CcTilingConfig(groupEp, opType1, algConfigAllToAllStr);
-    mc2CcTilingConfig.GetTiling(tiling->mc2InitTiling);
-    mc2CcTilingConfig.GetTiling(tiling->mc2CcTiling1);
-
-    mc2CcTilingConfig.SetGroupName(groupTp);
-    mc2CcTilingConfig.SetOpType(opType2);
-    mc2CcTilingConfig.SetAlgConfig(algConfigAllGatherStr);
-    mc2CcTilingConfig.GetTiling(tiling->mc2CcTiling2);
 }
 
 static ge::graphStatus SetWorkSpace(gert::TilingContext *context, const char *nodeName)
@@ -547,37 +511,14 @@ static ge::graphStatus CamMoeDispatchNormalA3TilingFuncImpl(gert::TilingContext 
                                      static_cast<int64_t>(localMoeExpertNum)) != ge::GRAPH_SUCCESS,
                     OP_LOGE(nodeName, "Check tensor shape failed."), return ge::GRAPH_FAILED);
 
-    // 校验win区大小
-    uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
     uint64_t h = static_cast<uint64_t>(tilingData->camMoeDispatchNormalInfo.h);
     uint64_t k = static_cast<uint64_t>(tilingData->camMoeDispatchNormalInfo.k);
     uint64_t epWorldSize = static_cast<uint64_t>(tilingData->camMoeDispatchNormalInfo.epWorldSize);
     uint64_t maxBs = static_cast<uint64_t>(tilingData->camMoeDispatchNormalInfo.globalBs) / epWorldSize;
 
-    // dispatch数据区 token首对齐512，有效token长度h_align_32b + scale(32b) + 三元组(3*4b)
-    uint64_t tokenActualLen =
-        ((h * MAX_OUT_DTYPE_SIZE + UB_ALIGN - 1UL) / UB_ALIGN) * UB_ALIGN + SCALE_EXPAND_IDX_BUFFER;
-    uint64_t tokenNeedSizeDispatch = ((tokenActualLen + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
-    uint64_t tokenNeedSizeCombine = ((h * MAX_OUT_DTYPE_SIZE + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
-    // 未考虑双流时大小
-    uint64_t actualSize = (maxBs * k * (tokenNeedSizeCombine + tokenNeedSizeDispatch) + COMBINE_STATE_WIN_OFFSET +
-                           NOTIFY_DISPATCH_WIN_OFFSET) *
-                          DOUBLE_DATA_BUFFER;
-    OP_TILING_CHECK((actualSize > maxWindowSize),
-                    OP_LOGE(nodeName,
-                            "HCCL_BUFFSIZE is too SMALL, maxBs = %lu, h = %lu, epWorldSize = %lu,"
-                            " localMoeExpertNum = %u, tokenNeedSizeDispatch = %lu, tokenNeedSizeCombine = %lu,"
-                            " k = %lu, NEEDED_HCCL_BUFFSIZE((maxBs * k * (tokenNeedSizeDispatch"
-                            " + tokenNeedSizeCombine) + 3MB + 204MB) * 2) = %luMB, HCCL_BUFFSIZE=%luMB.",
-                            maxBs, h, epWorldSize, localMoeExpertNum, tokenNeedSizeDispatch, tokenNeedSizeCombine, k,
-                            actualSize / MB_SIZE + 1UL, maxWindowSize / MB_SIZE),
-                    return ge::GRAPH_FAILED);
-    tilingData->camMoeDispatchNormalInfo.totalWinSize = maxWindowSize;
-    OP_LOGD(nodeName, "windowSize = %lu", maxWindowSize);
-
     OP_TILING_CHECK(SetWorkSpace(context, nodeName) != ge::GRAPH_SUCCESS,
                     OP_LOGE(nodeName, "Tiling set workspace failed."), return ge::GRAPH_FAILED);
-    SetHcommCfg(context, tilingData, groupEp, groupTp);
+
     uint32_t tpWorldSize = tilingData->camMoeDispatchNormalInfo.tpWorldSize;
     uint64_t tilingKey = INIT_TILINGKEY;
     CalTilingKey(tilingKey, quantMode, tpWorldSize);
