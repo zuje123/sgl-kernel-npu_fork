@@ -9,7 +9,7 @@ extern "C" {
 
 __attribute__((visibility("default"))) aclnnStatus aclnnCamMoeDispatchNormalGetWorkspaceSize(
     const aclTensor *x, const aclTensor *topkIdx, const aclTensor *sendOffset, const aclTensor *sendTokenIdx,
-    const aclTensor *recvOffset, const aclTensor *recvCount, char *groupEp, int64_t epWorldSize, int64_t epRankId,
+    const aclTensor *recvOffset, const aclTensor *recvCount, const aclTensor *putOffset, char *groupEp, int64_t epWorldSize, int64_t epRankId,
     char *groupTpOptional, int64_t tpWorldSize, int64_t tpRankId, int64_t moeExpertNum, int64_t quantMode,
     int64_t globalBs, int64_t shmemPtr, const aclTensor *recvX, const aclTensor *recvXScales, const aclTensor *assistInfoForCombine,
     const aclTensor *waitRecvCostStats, uint64_t *workspaceSize, aclOpExecutor **executor);
