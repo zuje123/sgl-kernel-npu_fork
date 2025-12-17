@@ -205,16 +205,16 @@ private:
         uint32_t moeExpertPerRankNum = numExperts / epWorldSize_;
         uint32_t startExpId = rankId * moeExpertPerRankNum;
         uint32_t endExpId = rankId * moeExpertPerRankNum + moeExpertPerRankNum;
-        // 对recv_data进行转置并求前缀和
-        int32_t prefixSum = 0; // 每卡求前缀和，不同卡需要重置
+        // 对recv_data进行转置
+        int32_t prefixSum = 0; // 每卡求前缀和，调整为偏移，起始偏移从0开始
         for (uint32_t expId = startExpId; expId < endExpId; ++expId) {
             for (uint32_t srcRank = 0; srcRank < epWorldSize_; ++srcRank) {
                 uint32_t index = (expId - startExpId) * epWorldSize_ + srcRank;
                 uint32_t pairIdx = srcRank * numExperts + expId;
 
                 int32_t curRecvCount = recvDataGt_(pairIdx);
-                prefixSum += curRecvCount;
                 transLt(index) = isCumSum ? prefixSum : curRecvCount; // 根据是否需要前缀和进行填充
+                prefixSum += curRecvCount;
             }
         }
         PipeBarrier<PIPE_ALL>();
@@ -286,7 +286,7 @@ private:
         pipe_.InitBuffer(sendCountBuf_, Ceil(numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
         LocalTensor<int32_t> recvTokenLt = sendCountBuf_.Get<int32_t>();
 
-        for (uint32_t rank = 0; rank < epWorldSize_; ++rank) {
+        for (uint32_t rank = startRankId; rank < endRankId; ++rank) {
             // 每卡求前缀和
             ReorderRecvDataOutput(epRankId_, recvTokenLt, true); // localExpNum * ranks
 
