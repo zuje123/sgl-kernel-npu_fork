@@ -43,9 +43,9 @@ class CamMoeDispatchNormal
 {
 public:
     __aicore__ inline CamMoeDispatchNormal(){};
-    __aicore__ inline void Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_tokenIdx,
-                                GM_ADDR put_offset, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut,
-                                GM_ADDR waitRecvCostStatsOut, GM_ADDR workspaceGM, TPipe *pipe,
+    __aicore__ inline void Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset, GM_ADDR send_tokenIdx,
+                                GM_ADDR recv_offset, GM_ADDR recv_count, GM_ADDR put_offset, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut,
+                                GM_ADDR expandIdxOut, GM_ADDR waitRecvCostStatsOut, GM_ADDR workspaceGM, TPipe *pipe,
                                 const CamMoeDispatchNormalTilingData *tilingData);
     __aicore__ inline void Process();
 
@@ -133,10 +133,10 @@ private:
 };
 
 template <CamTypeClass>
-__aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(
-    GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_tokenIdx, 
-    GM_ADDR put_offset, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut, GM_ADDR waitRecvCostStatsOut,
-    GM_ADDR workspaceGM, TPipe *pipe, const CamMoeDispatchNormalTilingData *tilingData)
+__aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(GM_ADDR x, GM_ADDR expertIds, GM_ADDR send_offset, GM_ADDR send_tokenIdx,
+    GM_ADDR recv_offset, GM_ADDR recv_count, GM_ADDR put_offset, GM_ADDR expandXOut, GM_ADDR dynamicScalesOut,
+    GM_ADDR expandIdxOut, GM_ADDR waitRecvCostStatsOut, GM_ADDR workspaceGM, TPipe *pipe,
+    const CamMoeDispatchNormalTilingData *tilingData)
 {
     tpipe_ = pipe;
     blockIdx = GetBlockIdx();
