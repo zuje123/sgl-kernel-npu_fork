@@ -313,10 +313,10 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::InputToDstOutput()
     for (int32_t tokenIndex = startTokenId; tokenIndex < endTokenId; ++tokenIndex) {
         uint32_t dstExpertId = expertIdsTensor(tokenIndex - startTokenId);
         uint32_t dstRankId = dstExpertId / moeExpertNumPerRank;
-        // 对端output的小偏移，专家内不同rank来源内的
+        // 对端output的小偏移，专家内不同rank来源内的，本卡发送给该专家的token序号
         int32_t curExpertIdx = sendTokenIdxTensor(tokenIndex - startTokenId);
-        // 对端output的大偏移，不同专家及不同rank来源间的
-        int32_t dstExpertOffset = putOffsetTensor(dstRankId * moeExpertNum + dstExpertId);
+        // 对端output的大偏移，不同专家及不同rank来源间的，本卡需要放置给该rank的token大偏移，定位到专家和来源rank
+        int32_t dstExpertOffset = putOffsetTensor(dstExpertId * epRankSize + epRankId);
 
         auto ptr = reinterpret_cast<__gm__ uint8_t *>(shmem_ptr(expandXOutGM,  dstRankId));
         dstGT.SetGlobalBuffer((__gm__ ExpandXOutType *)(ptr + hUBAlignSize * (dstExpertOffset + curExpertIdx)));
