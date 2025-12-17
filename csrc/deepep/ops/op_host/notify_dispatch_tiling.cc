@@ -44,7 +44,8 @@ constexpr uint32_t ATTR_RANK_SIZE_INDEX = 3;
 constexpr uint32_t ATTR_RANK_ID_INDEX = 4;
 constexpr uint32_t ATTR_LOCAL_RANK_SIZE_INDEX = 5;
 constexpr uint32_t ATTR_LOCAL_RANK_ID_INDEX = 6;
-constexpr uint32_t ATTR_SHMEM_PTR_INDEX = 7;
+constexpr uint32_t ATTR_TOPK_NUM_INDEX = 7;
+constexpr uint32_t ATTR_SHMEM_PTR_INDEX = 8;
 
 // const size_t MAX_GROUP_NAME_LENGTH = 128UL;
 const int64_t MAX_COMM_WORLD_SIZE = 384;
@@ -90,6 +91,7 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, con
     auto rankIdPtr = attrs->GetAttrPointer<int64_t>(ATTR_RANK_ID_INDEX);
     auto localRankSizePtr = attrs->GetAttrPointer<int64_t>(ATTR_LOCAL_RANK_SIZE_INDEX);
     auto localRankIdPtr = attrs->GetAttrPointer<int64_t>(ATTR_LOCAL_RANK_ID_INDEX);
+    auto topkNumPtr = attrs->GetAttrPointer<int64_t>(ATTR_TOPK_NUM_INDEX);
     auto shmemPtrPtr = attrs->GetAttrPointer<int64_t>(ATTR_SHMEM_PTR_INDEX);
 
     // OP_TILING_CHECK((commGroupPtr == nullptr) || (strnlen(commGroupPtr, MAX_GROUP_NAME_LENGTH) == 0) ||
@@ -102,6 +104,7 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, con
     OP_TILING_CHECK(localRankSizePtr == nullptr, OP_LOGE(nodeName, "localRankSizePtr is null."),
                     return ge::GRAPH_FAILED);
     OP_TILING_CHECK(localRankIdPtr == nullptr, OP_LOGE(nodeName, "localRankIdPtr is null."), return ge::GRAPH_FAILED);
+    OP_TILING_CHECK(topkNumPtr == nullptr, OP_LOGE(nodeName, "topkNumPtr is null."), return ge::GRAPH_FAILED);
 
     OP_TILING_CHECK((*rankSizePtr <= 0) || (*rankSizePtr > MAX_COMM_WORLD_SIZE),
                     OP_LOGE(nodeName, "rankSize is invalid, only support (0, %ld], but got rankSize=%ld.",
@@ -118,6 +121,10 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, con
         (*numTokenPtr <= 0),
         OP_LOGE(nodeName, "numTokenPtr is invalid, only support > 0, but got numTokenPtr=%ld.", *numTokenPtr),
         return ge::GRAPH_FAILED);
+    OP_TILING_CHECK(
+        (*topkNumPtr <= 0),
+        OP_LOGE(nodeName, "topkNumPtr is invalid, only support > 0, but got topkNumPtr=%ld.", *topkNumPtr),
+        return ge::GRAPH_FAILED);
 
     // commGroup = std::string(commGroupPtr);
     tilingData.notifyDispatchInfo.rankSize = static_cast<uint32_t>(*rankSizePtr);
@@ -126,6 +133,7 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, con
     tilingData.notifyDispatchInfo.localRankId = static_cast<uint32_t>(*localRankIdPtr);
     tilingData.notifyDispatchInfo.sendCount = static_cast<uint32_t>(*sendCountPtr);
     tilingData.notifyDispatchInfo.numTokens = static_cast<uint32_t>(*numTokenPtr);
+    tilingData.notifyDispatchInfo.topkNum = static_cast<uint32_t>(*topkNumPtr);
     tilingData.shmemPtr = static_cast<uint64_t>(*shmemPtrPtr);
 
     return ge::GRAPH_SUCCESS;

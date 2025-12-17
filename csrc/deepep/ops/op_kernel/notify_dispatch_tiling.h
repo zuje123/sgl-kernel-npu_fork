@@ -10,6 +10,7 @@ struct NotifyDispatchInfo {
     uint32_t localRankId;
     uint32_t sendCount;
     uint32_t numTokens;
+    uint32_t topkNum;
     uint32_t aivNum;
     uint64_t totalUbSize;
 };

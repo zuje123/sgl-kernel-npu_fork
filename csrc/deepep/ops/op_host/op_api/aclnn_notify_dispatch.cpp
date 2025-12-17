@@ -18,15 +18,15 @@ extern "C" void __attribute__((weak)) NnopbaseSetHcclServerType(void *executor, 
 
 aclnnStatus aclnnNotifyDispatchGetWorkspaceSize(
     const aclTensor *sendData, const aclTensor *tokenPerExpertData, int64_t sendCount, int64_t numTokens,
-    char *commGroup, int64_t rankSize, int64_t rankId, int64_t localRankSize, int64_t localRankId, int64_t shmemPtr,
+    char *commGroup, int64_t rankSize, int64_t rankId, int64_t localRankSize, int64_t localRankId, int64_t topkNum, int64_t shmemPtr,
     const aclTensor *sendDataOffset, const aclTensor *recvData, const aclTensor *totalRecvTokens,
-    const aclTensor *recvCount, const aclTensor *allRecvCount, const aclTensor *recvOffset, const aclTensor *maxBs,
-    const aclTensor *recvTokensPerExpert, uint64_t *workspaceSize, aclOpExecutor **executor)
+    const aclTensor *recvCount, const aclTensor *recvOffset, const aclTensor *maxBs,
+    const aclTensor *recvTokensPerExpert, const aclTensor *allRecvCount, uint64_t *workspaceSize, aclOpExecutor **executor)
 {
     return aclnnInnerNotifyDispatchGetWorkspaceSize(sendData, tokenPerExpertData, sendCount, numTokens, commGroup,
-                                                    rankSize, rankId, localRankSize, localRankId, shmemPtr,
+                                                    rankSize, rankId, localRankSize, localRankId, topkNum, shmemPtr,
                                                     sendDataOffset, recvData, totalRecvTokens, recvCount, recvOffset,
-                                                    maxBs, recvTokensPerExpert, workspaceSize, executor);
+                                                    maxBs, recvTokensPerExpert, allRecvCount, workspaceSize, executor);
 }
 
 aclnnStatus aclnnNotifyDispatch(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)

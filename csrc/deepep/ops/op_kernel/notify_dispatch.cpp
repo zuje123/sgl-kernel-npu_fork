@@ -12,7 +12,7 @@
 extern "C" __global__ __aicore__ void notify_dispatch(GM_ADDR sendData, GM_ADDR tokenPerExpertData,
                                                       GM_ADDR sendDataOffset, GM_ADDR recvData, GM_ADDR totalRecvTokens,
                                                       GM_ADDR recvCount, GM_ADDR recvOffset, GM_ADDR maxBs,
-                                                      GM_ADDR recvTokensPerExpert, GM_ADDR workspace, GM_ADDR tiling)
+                                                      GM_ADDR recvTokensPerExpert, GM_ADDR allRecvCount, GM_ADDR workspace, GM_ADDR tiling)
 {
     REGISTER_TILING_DEFAULT(NotifyDispatchTilingData);
     GET_TILING_DATA_WITH_STRUCT(NotifyDispatchTilingData, tilingData, tiling);
@@ -23,6 +23,7 @@ extern "C" __global__ __aicore__ void notify_dispatch(GM_ADDR sendData, GM_ADDR 
     int rankSize = tilingData.notifyDispatchInfo.rankSize;
     int64_t len = tilingData.notifyDispatchInfo.sendCount;
     int64_t numTokens = tilingData.notifyDispatchInfo.numTokens;
+    uint32_t topkNum = tilingData.notifyDispatchInfo.topkNum;
     uint64_t shmemPtr = tilingData.shmemPtr;
 
     GM_ADDR sendDataInput = sendData;

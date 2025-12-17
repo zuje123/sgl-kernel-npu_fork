@@ -51,6 +51,12 @@ public:
             .DataType({ge::DT_INT64, ge::DT_INT64, ge::DT_INT64})
             .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
             .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
+        this->Output("allRecvCount")
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_INT64, ge::DT_INT64, ge::DT_INT64})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
+            .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
+
         this->Attr("sendCount").Int();
         this->Attr("num_tokens").Int();
         this->Attr("comm_group").String();  // Not used when enabling shmem
@@ -58,6 +64,7 @@ public:
         this->Attr("rank_id").Int();
         this->Attr("local_rank_size").Int();
         this->Attr("local_rank_id").Int();
+        this->Attr("topk_num").Int();
         this->Attr("shmem_ptr").Int();
 
         OpAICoreConfig aicore_config_base;
