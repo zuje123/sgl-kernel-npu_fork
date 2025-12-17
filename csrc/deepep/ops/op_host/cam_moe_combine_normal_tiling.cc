@@ -18,7 +18,7 @@
 #include "error_log.h"
 #include "graph/utils/type_utils.h"
 #include "register/op_def_registry.h"
-#include "mc2_tiling_utils.h"
+// #include "mc2_tiling_utils.h"
 #include "../op_kernel/cam_moe_combine_normal_tiling.h"
 #include "tiling_args.h"
 
@@ -166,7 +166,7 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, Cam
                     return ge::GRAPH_FAILED);
 
     groupEp = std::string(groupEpPtr);
-    tilingData.camMoeCombineNormalInfo.metaDataPtr = static_cast<uint64_t>(*metaDataPtrPtr);
+    tilingData.shmemPtr = static_cast<uint64_t>(*metaDataPtrPtr);
     tilingData.camMoeCombineNormalInfo.epWorldSize = static_cast<uint32_t>(epWorldSize);
     tilingData.camMoeCombineNormalInfo.tpWorldSize = static_cast<uint32_t>(*tpWorldSizePtr);
     tilingData.camMoeCombineNormalInfo.epRankId = static_cast<uint32_t>(*epRankIdPtr);
@@ -470,6 +470,7 @@ static ge::graphStatus SetWorkspace(gert::TilingContext *context, const char *no
     return ge::GRAPH_SUCCESS;
 }
 
+/*
 static void SetHCommCfg(gert::TilingContext *context, CamMoeCombineNormalTilingData *tiling, const std::string groupEp,
                         const std::string groupTp)
 {
@@ -489,6 +490,7 @@ static void SetHCommCfg(gert::TilingContext *context, CamMoeCombineNormalTilingD
     mc2CcTilingConfig.SetAlgConfig(algConfigReduceScatterStr);
     mc2CcTilingConfig.GetTiling(tiling->mc2CcTiling2);
 }
+*/
 
 static ge::graphStatus CamMoeCombineNormalA3TilingFuncImpl(gert::TilingContext *context)
 {
@@ -522,7 +524,7 @@ static ge::graphStatus CamMoeCombineNormalA3TilingFuncImpl(gert::TilingContext *
                     OP_LOGE(nodeName, "param dim check failed."), return ge::GRAPH_FAILED);
 
     // 校验win区大小
-    uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
+    // uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
     uint64_t h = static_cast<uint64_t>(tilingData->camMoeCombineNormalInfo.h);
     uint64_t epWorldSize = static_cast<uint64_t>(tilingData->camMoeCombineNormalInfo.epWorldSize);
     uint64_t k = static_cast<uint64_t>(tilingData->camMoeCombineNormalInfo.k);
@@ -531,23 +533,23 @@ static ge::graphStatus CamMoeCombineNormalA3TilingFuncImpl(gert::TilingContext *
     uint64_t tokenNeedSizeCombine = ((h * MAX_OUT_DTYPE_SIZE + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
     uint64_t actualSize =
         (maxBs * k * tokenNeedSizeCombine + COMBINE_STATE_WIN_OFFSET + NOTIFY_DISPATCH_WIN_OFFSET) * DOUBLE_DATA_BUFFER;
-    OP_TILING_CHECK(
-        (actualSize > maxWindowSize),
-        OP_LOGE(nodeName,
-                "HCCL_BUFFSIZE is too SMALL, maxBs = %lu, h = %lu, epWorldSize = %lu, localMoeExpertNum = %u,"
-                " tokenNeedSizeCombine = %lu, k = %lu, NEEDED_HCCL_BUFFSIZE("
-                "((maxBs * k * tokenNeedSizeCombine)) + 3MB + 204MB) * 2) = %luMB, "
-                "HCCL_BUFFSIZE=%luMB.",
-                maxBs, h, epWorldSize, localMoeExpertNum, tokenNeedSizeCombine, k, actualSize / MB_SIZE + 1UL,
-                maxWindowSize / MB_SIZE),
-        return ge::GRAPH_FAILED);
-    tilingData->camMoeCombineNormalInfo.totalWinSize = maxWindowSize;
+    // OP_TILING_CHECK(
+    //     (actualSize > maxWindowSize),
+    //     OP_LOGE(nodeName,
+    //             "HCCL_BUFFSIZE is too SMALL, maxBs = %lu, h = %lu, epWorldSize = %lu, localMoeExpertNum = %u,"
+    //             " tokenNeedSizeCombine = %lu, k = %lu, NEEDED_HCCL_BUFFSIZE("
+    //             "((maxBs * k * tokenNeedSizeCombine)) + 3MB + 204MB) * 2) = %luMB, "
+    //             "HCCL_BUFFSIZE=%luMB.",
+    //             maxBs, h, epWorldSize, localMoeExpertNum, tokenNeedSizeCombine, k, actualSize / MB_SIZE + 1UL,
+    //             maxWindowSize / MB_SIZE),
+    //     return ge::GRAPH_FAILED);
+    // tilingData->camMoeCombineNormalInfo.totalWinSize = maxWindowSize;
 
     OP_TILING_CHECK(SetWorkspace(context, nodeName) != ge::GRAPH_SUCCESS,
                     VECTOR_INNER_ERR_REPORT_TILIING(context->GetNodeName(), "Tiling set workspace Failed"),
                     return ge::GRAPH_FAILED);
 
-    SetHCommCfg(context, tilingData, groupEp, groupTp);
+    // SetHCommCfg(context, tilingData, groupEp, groupTp);
 
     uint64_t tpWorldSize = static_cast<uint64_t>(tilingData->camMoeCombineNormalInfo.tpWorldSize);
 

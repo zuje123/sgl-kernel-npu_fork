@@ -22,13 +22,13 @@ struct CamMoeCombineNormalInfo {
     float armAvgFactor;
     float epsilon;
     bool isEnableDiagnose;
-    uint64_t metaDataPtr;
 };
 struct CamMoeCombineNormalTilingData {
-    Mc2InitTiling mc2InitTiling;
-    Mc2CcTiling mc2CcTiling1;
-    Mc2CcTiling mc2CcTiling2;
+    // Mc2InitTiling mc2InitTiling;
+    // Mc2CcTiling mc2CcTiling1;
+    // Mc2CcTiling mc2CcTiling2;
     CamMoeCombineNormalInfo camMoeCombineNormalInfo;
+    uint64_t shmemPtr;  // shmem symmetric point
 };
 
 #endif  // CAM_MOE_COMBINE_NORMAL_TILING_H
