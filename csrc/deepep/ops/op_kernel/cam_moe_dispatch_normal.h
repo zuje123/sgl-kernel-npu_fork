@@ -195,6 +195,9 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(GM_ADDR x, GM_ADD
     putOffsetAlignSize = Ceil(epRankSize * moeExpertNum * sizeof(int32_t), UB_ALIGN) * UB_ALIGN; // 4 * ranks * moeNum
     tpipe_->InitBuffer(putOffsetBuf, putOffsetAlignSize);
     putOffsetTensor = putOffsetBuf.Get<int32_t>();
+
+    // printf("[dispatch_init] rank:%d, blockId:%d, epRankSize:%d, dataState:%d, hUBAlignSize:%d, hOutUBAlignSize:%d, \n",
+    //         epRankId, blockIdx, epRankSize, dataState, hUBAlignSize, hOutUBAlignSize);
 }
 
 template <CamTypeClass>
@@ -320,6 +323,7 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::InputToDstOutput()
 
         auto ptr = reinterpret_cast<__gm__ uint8_t *>(shmem_ptr(expandXOutGM,  dstRankId));
         dstGT.SetGlobalBuffer((__gm__ ExpandXOutType *)(ptr + hUBAlignSize * (dstExpertOffset + curExpertIdx)));
+        // printf("[InputToDstOutput] rank:%d, blockId:%d, dstRankId:%d, ptr:%p\n", epRankId, blockIdx, dstRankId, ptr);
 
         if constexpr (DynamicQuant) {
             auto dsPtr = shmem_ptr((__gm__ uint8_t *)(dynamicScalesOutGT.GetPhyAddr()),  dstRankId);
@@ -346,6 +350,9 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::InputToDstOutput()
             xTmpTensor = xQueue.DeQue<ExpandXOutType>();
             DataCopyPad(dstGT, xTmpTensor, xOutCopyParams);
             xQueue.FreeTensor<ExpandXOutType>(xTmpTensor);
+            // if (epRankId == 0) {
+            //     AscendC::DumpTensor(dstGT, 351, 16);
+            // }
         }
     }
 }
@@ -454,9 +461,11 @@ template <CamTypeClass>
 __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Process()
 {
     if ASCEND_IS_AIV {
+        printf("[dispatch] rank:%d, blockId:%d, enter process...\n", epRankId, blockIdx);
         InputToDstOutput();
-        SetShmemStatus();
-        WaitShmemStatus();
+        printf("[dispatch] rank:%d, blockId:%d, InputToDstOutput\n", epRankId, blockIdx);
+        SyncAll<true>();
+        shmem_barrier_all();  // 全卡同步，确保数据已经获取完
     }
 }
 

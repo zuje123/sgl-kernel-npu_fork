@@ -56,7 +56,7 @@ torch::Tensor create_tensor_from_shmem(const std::vector<int64_t>& shape, at::Sc
     torch::Tensor tensor = torch::from_blob(
         dev_ptr,
         c10::IntArrayRef(shape),
-        [&rank](void* ptr) { 
+        [rank](void* ptr) { 
             printf("[free_tensor] rank:%d, ptr:%p\n", rank, ptr);
             shmem_free(ptr); 
         },
@@ -169,7 +169,7 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
         num_tokens_per_expert = at::zeros({num_experts}, at::dtype(at::kInt).device(device));
     }
     auto format = num_tokens_per_expert.suggest_memory_format();
-    std::cout << "[layout] rank: " << rank << " num_tokens_per_expert " << num_tokens_per_expert.sizes() << " Memory format: " << static_cast<int>(format) << std::endl;
+    // std::cout << "[layout] rank: " << rank << " num_tokens_per_expert " << num_tokens_per_expert.sizes() << " Memory format: " << static_cast<int>(format) << std::endl;
 
     auto num_tokens_per_rank = at::zeros({num_ranks}, at::dtype(at::kInt).device(device));
     auto is_token_in_rank = at::zeros({num_tokens, num_ranks}, at::dtype(at::kInt).device(device));
@@ -329,7 +329,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
 
     char hcom_ep_name[HCOMM_NAME_LEN];
     int send_per_group, send_count;
-    at::Tensor new_num_tokens_per_expert, send_data, send_data_offset, recv_data, all_recv_count_, total_recv_token_, recv_count_, recv_offset_, max_bs_, recv_tokens_per_expert_;
+    at::Tensor send_data, send_data_offset, recv_data, all_recv_count_, total_recv_token_, recv_count_, recv_offset_, max_bs_, recv_tokens_per_expert_;
     int64_t topk_num = expert_ids.size(1);
     int64_t ext_info;  // shmem_ptr_info
 
@@ -338,9 +338,6 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         send_count = send_per_group * num_experts;
         // get shmem_ptr_info
         ext_info = (int64_t)shmem_ptr;
-
-        // new_num_tokens_per_expert = create_tensor_from_shmem(std::vector<int64_t>{num_experts}, at::kInt, device, rank);
-        new_num_tokens_per_expert = num_tokens_per_expert.value();
 
         send_data = torch::empty({1}, at::dtype(at::kInt).device(device));  // not use
         send_data_offset = torch::empty({1}, at::dtype(at::kInt).device(device));  // not use
@@ -357,8 +354,6 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     } else {
         send_per_group = 3;  // (send_to_expert_num, send_to_expert_offset, send_rank_tokens)
         send_count = send_per_group * num_local_experts * num_ranks;
-
-        new_num_tokens_per_expert = num_tokens_per_expert.value();
 
         send_data = torch::empty({num_experts * send_per_group}, at::dtype(at::kInt).device(x.device()));
         send_data_offset = torch::empty({num_experts}, at::dtype(at::kInt).device(x.device()));
@@ -377,6 +372,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
             HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
         }
     }
+    auto new_num_tokens_per_expert = num_tokens_per_expert.value();
 
     int64_t local_rank_size = num_ranks;
     int64_t local_rank_id = rank % local_rank_size;
@@ -401,10 +397,22 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     int64_t gBs = max_bs_.item<int>() * num_ranks;
     int trt = total_recv_token_.item<int>();
     int num_recv_tokens = (trt == 0) ? 1 : trt;
-    auto expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
-                                 : torch::empty({num_recv_tokens, hidden}, x.options());
-    auto dynamic_scales_out = torch::empty({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
-    auto expand_idx_out = torch::empty({num_recv_tokens * 3}, at::dtype(at::kInt).device(x.device()));
+
+    at::Tensor expandx_out, dynamic_scales_out, expand_idx_out;
+    if (shmem_enable) {
+        // 对称内存tesor，需要按 gBs * topk 进行预留大小
+        int64_t reserve_tokens = gBs * topk_num;
+        expandx_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, at::kInt, device, rank)
+                               : create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, x.scalar_type(), device, rank);
+        dynamic_scales_out = create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens}, at::kFloat, device, rank);
+        expand_idx_out = torch::empty({1}, at::dtype(at::kInt).device(x.device()));  // not use
+    } else {
+        // 普通tensor按实际接收预留大小
+        expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
+                               : torch::empty({num_recv_tokens, hidden}, x.options());
+        dynamic_scales_out = torch::empty({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));
+        expand_idx_out = torch::empty({num_recv_tokens * 3}, at::dtype(at::kInt).device(x.device()));
+    }
     if (topk_idx.has_value()) {
         recv_topk_idx = at::empty({trt, num_topk}, topk_idx->options());
         recv_topk_weights = at::empty({trt, num_topk}, topk_weights->options());
@@ -414,11 +422,12 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         std::cout << "rank " << rank << " gBs " << gBs << " num_recv_tokens " << num_recv_tokens << std::endl;
     }
     EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, send_token_idx_small, recv_offset_,
-                 recv_count_, hcom_ep_name,
+                 recv_count_, all_recv_count_, hcom_ep_name,
                  num_ranks,  // rankSize
                  rank,       // rankId
-                 hcom_ep_name, tp_size, tp_rank, num_experts, quant_mode, gBs, expandx_out, dynamic_scales_out,
-                 expand_idx_out, dispatch_wait_recv_cost_stats_out);
+                 hcom_ep_name, tp_size, tp_rank, num_experts, quant_mode, gBs, ext_info,
+                 // output params
+                 expandx_out, dynamic_scales_out, expand_idx_out, dispatch_wait_recv_cost_stats_out);
     auto recv_token_per_exp_cpu = recv_tokens_per_expert_.to(at::kCPU);
     auto recv_token_per_exp_ptr = recv_token_per_exp_cpu.data_ptr<int64_t>();
 
