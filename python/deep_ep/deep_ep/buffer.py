@@ -345,6 +345,7 @@ class Buffer:
                 recv_channel_prefix_matrix,
                 recv_src_idx,
                 send_head,
+                all_recv_count,
                 event,
             ) = self.runtime.intranode_dispatch(
                 x,
@@ -375,6 +376,7 @@ class Buffer:
                 send_head,
                 topk_idx,
                 topk_weights,
+                all_recv_count,
             )
             return (
                 (recv_x, recv_x_scales) if use_quant else recv_x,
