@@ -74,6 +74,7 @@ static void PrintTilingDataInfo(const char *nodeName, NotifyDispatchTilingData &
     OP_LOGD(nodeName, "localRankId is %u.", tilingData.notifyDispatchInfo.localRankId);
     OP_LOGD(nodeName, "sendCount is %u.", tilingData.notifyDispatchInfo.sendCount);
     OP_LOGD(nodeName, "numTokens is %u.", tilingData.notifyDispatchInfo.numTokens);
+    OP_LOGD(nodeName, "topkNum is %u.", tilingData.notifyDispatchInfo.topkNum);
     OP_LOGD(nodeName, "aivNum is %u.", tilingData.notifyDispatchInfo.aivNum);
     OP_LOGD(nodeName, "totalUbSize is %lu.", tilingData.notifyDispatchInfo.totalUbSize);
 }

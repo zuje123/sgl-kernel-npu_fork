@@ -22,11 +22,11 @@ __aicore__ inline void SyncFunc()
 
 #define KERNELS_ARGS_FUN_ALL2ALL()                                                                                    \
     GM_ADDR tokenPerExpertData, GM_ADDR recvDataOutput, GM_ADDR totalRecvTokens, GM_ADDR recvCount,        \
-        GM_ADDR maxBs, GM_ADDR recvTokensPerExpert, int64_t len, int64_t numTokens, uint32_t topkNum, int root,  \
+        GM_ADDR maxBs, GM_ADDR recvTokensPerExpert, GM_ADDR allRecvCount, int64_t len, int64_t numTokens, uint32_t topkNum, int root,  \
         int localRank, int localRankSize, uint64_t shmemPtr
 
 #define KERNELS_ARGS_CALL_ALL2ALL()                                                                             \
-    tokenPerExpertData, recvDataOutput, totalRecvTokens, recvCount, maxBs, recvTokensPerExpert, len, \
+    tokenPerExpertData, recvDataOutput, totalRecvTokens, recvCount, maxBs, recvTokensPerExpert, allRecvCount, len, \
         numTokens, topkNum, root, localRank, localRankSize, shmemPtr
 
 template <typename T>
@@ -59,8 +59,9 @@ public:
         rankNumPerCore = (epWorldSize_ + blockNum_ - 1) / blockNum_;
         topkNum_ = topkNum;
         perRankDataNum = len;  // allgather, 发送所有数据
+        tokenPerExpertData_ = tokenPerExpertData;
         totalRecvTokens_ = totalRecvTokens;
-        recvCount_ = recvCount;
+        allRecvCount_ = allRecvCount;
         maxBs_ = maxBs;
         recvTokensPerExpert_ = recvTokensPerExpert;
         recvData_ = recvDataOutput;
@@ -74,25 +75,40 @@ public:
         this->recvDataOutput = (__gm__ T *)recvDataOutput;
         recvDataOutputGt.SetGlobalBuffer((__gm__ T *)recvDataOutput);
         recvDataGt_.SetGlobalBuffer((__gm__ int32_t *)recvDataOutput);
-        recvCntGt.SetGlobalBuffer((__gm__ int32_t *)recvCount_);
+        recvCntGt.SetGlobalBuffer((__gm__ int32_t *)allRecvCount_);
+
+        printf("[notify_init] rank:%d, blockId:%d, epWorldSize_:%d, localRankId:%d, numExperts:%d, topkNum_:%d, \n",
+            epRankId_, blockIdx_, epWorldSize_, localRankId, numExperts, topkNum_);
     }
 
     __aicore__ inline void Process()
     {
+        // printf("[notify] rank:%d, blockId:%d, enter process...\n", epRankId_, blockIdx_);
         AllGatherSendData();  // allgather 每个rank的sendCount
         SyncAll<true>();
+        // printf("[notify] rank:%d, blockId:%d, AllGatherSendData\n", epRankId_, blockIdx_);
+        // AscendC::DumpTensor(recvDataGt_, 86, 16);
         shmem_barrier_all();  // 全卡同步，确保数据已经获取完
+        // printf("[notify] rank:%d, blockId:%d, shmem_barrier_all\n", epRankId_, blockIdx_);
+        // return;
 
         BuildTotalRecvCount();
+        // printf("[notify] rank:%d, blockId:%d, BuildTotalRecvCount\n", epRankId_, blockIdx_);
         int32_t remainBlockIdx = (blockNum_ / 2);
         if (blockIdx_ == remainBlockIdx) {
             BuildMaxBs();
+            // printf("[notify] rank:%d, blockId:%d, BuildMaxBs\n", epRankId_, blockIdx_);
         } else if (blockIdx_ == remainBlockIdx + 1) {
             BuildTotalRecvTokens();
+            // printf("[notify] rank:%d, blockId:%d, BuildTotalRecvTokens\n", epRankId_, blockIdx_);
         } else if (blockIdx_ == remainBlockIdx + 2) {
             BuildRecvTokenPerExp();
+            // printf("[notify] rank:%d, blockId:%d, BuildRecvTokenPerExp\n", epRankId_, blockIdx_);
         }
         SyncAll<true>();
+        // if (blockIdx_ == 0) {
+        //     AscendC::DumpTensor(recvCntGt, 109, 16);
+        // }
     }
 
 private:
@@ -161,8 +177,9 @@ private:
     __gm__ int *tokenPerExpertDataInput;
     __gm__ T *recvDataOutput;
     __gm__ int32_t *allRecvCountOutput_;
+    GM_ADDR tokenPerExpertData_;
     GM_ADDR totalRecvTokens_;
-    GM_ADDR recvCount_;
+    GM_ADDR allRecvCount_;
     GM_ADDR maxBs_;
     GM_ADDR recvTokensPerExpert_;
     GM_ADDR recvData_;
@@ -193,8 +210,25 @@ private:
         if (rankNumPerBlock == 0U) {
             return;
         }
+        pipe_.InitBuffer(tmpBuf_, Ceil(numExperts * sizeof(int32_t), UB_ALIGN_SIZE) * UB_ALIGN_SIZE);
+        LocalTensor<int32_t> tokenPerExpertDataLt = tmpBuf_.Get<int32_t>();
+        DataCopyExtParams copyParams = {1U, static_cast<uint32_t>(tokenPerExpertDataAlignLen_), 0, 0, 0};
+        DataCopyPadExtParams<int32_t> copyPadExtParams{false, 0U, 0U, 0U};
+
+        // AscendC::DumpTensor(tokenPerExpertDataInputGt, 213, 8);
+        // printf("[AllGatherSendData1] rank:%d, blockId:%d, tokenPerExpertData_:%p\n", epRankId_, blockIdx_, tokenPerExpertData_);
+
+        AscendC::GlobalTensor<int32_t> gmRemoteDataGt;
         for (uint32_t targetRankId = startRankId; targetRankId < endRankId; targetRankId++) {
-            shmem_get_int32_mem_nbi(recvDataGt_[targetRankId], tokenPerExpertDataInputGt, numExperts, targetRankId);
+            auto ptr = shmem_ptr(tokenPerExpertData_, targetRankId);
+            gmRemoteDataGt.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(ptr));
+
+            // printf("[AllGatherSendData2] rank:%d, blockId:%d, targetRankId:%d, ptr:%p\n", epRankId_, blockIdx_, targetRankId, ptr);
+            // DataCopyPad(tokenPerExpertDataLt, gmRemoteDataGt, copyParams, copyPadExtParams);
+            // AscendC::DumpTensor(tokenPerExpertDataLt, 223, 8);
+
+            CpGM2GMPingPong<int32_t>(numExperts * sizeof(int32_t), gmRemoteDataGt, 
+                                recvDataGt_[targetRankId * numExperts], COPYONLY);
             PipeBarrier<PIPE_ALL>();
         }
     }
@@ -263,6 +297,9 @@ private:
         maxBsGt.SetGlobalBuffer((__gm__ int32_t *)maxBs_);
         DataCopyExtParams tmpCopyParams{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
         DataCopyPad(maxBsGt, maxBsLt, tmpCopyParams);
+
+        // AscendC::DumpTensor(maxBsGt, 298, 8);
+        printf("[BuildMaxBs] rank:%d, blockId:%d, maxBsGt:%d\n", epRankId_, blockIdx_, maxBsGt(0));
     }
 
     __aicore__ inline void BuildTotalRecvCount()
@@ -328,6 +365,9 @@ private:
         totalCntGt.SetGlobalBuffer((__gm__ int32_t *)totalRecvTokens_);
         DataCopyExtParams copyParams{1, static_cast<uint32_t>(1 * sizeof(int32_t)), 0, 0, 0};
         DataCopyPad(totalCntGt, totalCntLt, copyParams);
+
+        // AscendC::DumpTensor(totalCntGt, 365, 8);
+        printf("[BuildTotalRecvTokens] rank:%d, blockId:%d, totalCntGt:%d\n", epRankId_, blockIdx_, totalCntGt(0));
     }
 
     __aicore__ inline void BuildRecvTokenPerExp()
@@ -355,6 +395,8 @@ private:
         DataCopyExtParams copyParams{1, static_cast<uint32_t>(moeExpertPerRankNum * sizeof(int64_t)), 0, 0, 0};
         SyncFunc<AscendC::HardEvent::S_MTE3>();
         DataCopyPad(recvTokenPerExpGt, tmpTensor, copyParams);
+
+        AscendC::DumpTensor(recvTokenPerExpGt, 394, 8);
     }
 
     // 分核向对应rank发送flag
