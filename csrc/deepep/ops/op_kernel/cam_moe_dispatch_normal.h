@@ -196,6 +196,7 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(GM_ADDR x, GM_ADD
     tpipe_->InitBuffer(putOffsetBuf, putOffsetAlignSize);
     putOffsetTensor = putOffsetBuf.Get<int32_t>();
 
+    // hUBAlignSize:14336, hOutUBAlignSize:14368
     // printf("[dispatch_init] rank:%d, blockId:%d, epRankSize:%d, dataState:%d, hUBAlignSize:%d, hOutUBAlignSize:%d, \n",
     //         epRankId, blockIdx, epRankSize, dataState, hUBAlignSize, hOutUBAlignSize);
 }
@@ -461,9 +462,9 @@ template <CamTypeClass>
 __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Process()
 {
     if ASCEND_IS_AIV {
-        printf("[dispatch] rank:%d, blockId:%d, enter process...\n", epRankId, blockIdx);
+        // printf("[dispatch] rank:%d, blockId:%d, enter process...\n", epRankId, blockIdx);
         InputToDstOutput();
-        printf("[dispatch] rank:%d, blockId:%d, InputToDstOutput\n", epRankId, blockIdx);
+        // printf("[dispatch] rank:%d, blockId:%d, InputToDstOutput\n", epRankId, blockIdx);
         SyncAll<true>();
         shmem_barrier_all();  // 全卡同步，确保数据已经获取完
     }
