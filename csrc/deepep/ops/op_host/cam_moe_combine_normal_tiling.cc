@@ -31,7 +31,9 @@ constexpr uint32_t RECV_X_INDEX = 0;
 constexpr uint32_t TOKEN_SRC_INFO_INDEX = 1;
 constexpr uint32_t EP_RECV_COUNTS_INDEX = 2;
 constexpr uint32_t TOPK_WEIGHTS_INDEX = 3;
-constexpr uint32_t TP_RECV_COUNTS_INDEX = 4;
+constexpr uint32_t TOPK_IDX_INDEX = 4;
+constexpr uint32_t SEND_TOPKEN_IDX_INDEX = 5;
+constexpr uint32_t TP_RECV_COUNTS_INDEX = 6;
 constexpr uint32_t OUTPUT_X_INDEX = 0;
 constexpr uint32_t OUTPUT_SEND_COST_INDEX = 1;
 
@@ -112,9 +114,9 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, Cam
     auto moeExpertNumPtr = attrs->GetAttrPointer<int64_t>(ATTR_MOE_EXPERT_NUM_INDEX);
 
     // 判空
-    OP_TILING_CHECK((groupEpPtr == nullptr) || (strnlen(groupEpPtr, MAX_GROUP_NAME_LENGTH) == 0) ||
-                        (strnlen(groupEpPtr, MAX_GROUP_NAME_LENGTH) == MAX_GROUP_NAME_LENGTH),
-                    OP_LOGE(nodeName, "groupEp is invalid."), return ge::GRAPH_FAILED);
+    // OP_TILING_CHECK((groupEpPtr == nullptr) || (strnlen(groupEpPtr, MAX_GROUP_NAME_LENGTH) == 0) ||
+    //                     (strnlen(groupEpPtr, MAX_GROUP_NAME_LENGTH) == MAX_GROUP_NAME_LENGTH),
+    //                 OP_LOGE(nodeName, "groupEp is invalid."), return ge::GRAPH_FAILED);
     OP_TILING_CHECK(epWorldSizePtr == nullptr, OP_LOGE(nodeName, "epWorldSize is null."), return ge::GRAPH_FAILED);
     OP_TILING_CHECK(tpWorldSizePtr == nullptr, OP_LOGE(nodeName, "tpWorldSize is null."), return ge::GRAPH_FAILED);
     OP_TILING_CHECK(epRankIdPtr == nullptr, OP_LOGE(nodeName, "epRankId is null."), return ge::GRAPH_FAILED);
@@ -142,9 +144,9 @@ static ge::graphStatus GetAttrAndSetTilingData(gert::TilingContext *context, Cam
                         OP_LOGE(nodeName, "tpRankId is invalid, only support [0, %ld), but got tpRankId=%ld.",
                                 *tpWorldSizePtr, *tpRankIdPtr),
                         return ge::GRAPH_FAILED);
-        OP_TILING_CHECK((groupTpPtr == nullptr) || (strnlen(groupTpPtr, MAX_GROUP_NAME_LENGTH) == 0) ||
-                            (strnlen(groupTpPtr, MAX_GROUP_NAME_LENGTH) == MAX_GROUP_NAME_LENGTH),
-                        OP_LOGE(nodeName, "groupTpPtr is null."), return ge::GRAPH_FAILED);
+        // OP_TILING_CHECK((groupTpPtr == nullptr) || (strnlen(groupTpPtr, MAX_GROUP_NAME_LENGTH) == 0) ||
+        //                     (strnlen(groupTpPtr, MAX_GROUP_NAME_LENGTH) == MAX_GROUP_NAME_LENGTH),
+        //                 OP_LOGE(nodeName, "groupTpPtr is null."), return ge::GRAPH_FAILED);
         groupTp = std::string(groupTpPtr);
     } else {
         OP_TILING_CHECK(
