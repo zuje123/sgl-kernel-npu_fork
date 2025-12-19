@@ -326,13 +326,13 @@ __aicore__ inline void CamMoeCombineNormal<TemplateMC2TypeFunc>::ReadBufferFromR
 
     tpipe_->Reset();
     tpipe_->InitBuffer(xOutBuf_, h32AlignRecvXLen_);                          // 14KB
-    tpipe_->InitBuffer(tokenFloatBuf_, h32AlignFloatLen_);                    // 14KB
-    tpipe_->InitBuffer(weightedMulBuf_, h256AlignFloatLen_);                  // 14KB
-    tpipe_->InitBuffer(sumFloatBuf_, h32AlignFloatLen_);                      // 14KB
+    tpipe_->InitBuffer(tokenFloatBuf_, h32AlignFloatLen_);                    // 28KB
+    tpipe_->InitBuffer(weightedMulBuf_, h256AlignFloatLen_);                  // 28KB
+    tpipe_->InitBuffer(sumFloatBuf_, h32AlignFloatLen_);                      // 28KB
     tpipe_->InitBuffer(weightedSumQueue_, DOUBLE_BUFFER, h32AlignRecvXLen_);  // 2 * 14KB = 28KB
-    tpipe_->InitBuffer(topkWeightsBuf_, k32AlignFloatLen_);
-    tpipe_->InitBuffer(sendTokenIdxBuf_, k32AlignLen_);
-    tpipe_->InitBuffer(topkIdxBuf_, k32AlignLen_);
+    tpipe_->InitBuffer(topkWeightsBuf_, k32AlignFloatLen_);                   // 32b
+    tpipe_->InitBuffer(sendTokenIdxBuf_, k32AlignLen_);                       // 32b
+    tpipe_->InitBuffer(topkIdxBuf_, k32AlignLen_);                            // 32b
     // moeExpertNum最大为512，tensor大小为 64*512*4=128kb
     uint32_t recvCountAlignLen_ = Ceil(epWorldSize_ * moeExpertNum_ * sizeof(int32_t), UB_32_ALIGN) * UB_32_ALIGN;
     tpipe_->InitBuffer(allRecvCountBuf_, recvCountAlignLen_);

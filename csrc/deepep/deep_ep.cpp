@@ -58,7 +58,7 @@ torch::Tensor create_tensor_from_shmem(const std::vector<int64_t>& shape, at::Sc
         c10::IntArrayRef(shape),
         [rank](void* ptr) { 
             printf("[free_tensor] rank:%d, ptr:%p\n", rank, ptr);
-            shmem_free(ptr); 
+            shmem_free(ptr);
         },
         options
     );
@@ -410,9 +410,12 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         // std::cout << "[intranode_dispatch 3] rank " << rank << " gBs " << gBs << " reserve_tokens " << reserve_tokens << std::endl;
         expandx_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, at::kInt, device, rank)
                                : create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, x.scalar_type(), device, rank);
-        dynamic_scales_out = create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens}, at::kFloat, device, rank);
-        expand_idx_out = torch::empty({1}, at::dtype(at::kInt).device(x.device()));  // not use
+        dynamic_scales_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens}, at::kFloat, device, rank)
+                                    : torch::empty({1}, at::dtype(at::kFloat).device(device));
+        expand_idx_out = torch::empty({1}, at::dtype(at::kInt).device(device));  // not use
         // std::cout << "[intranode_dispatch 4] rank " << rank << " expandx_out " << expandx_out.sizes() << " dynamic_scales_out " << dynamic_scales_out.sizes() << std::endl;
+
+        recv_data.reset(); // release symetric tensor
     } else {
         // 普通tensor按实际接收预留大小
         expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
@@ -441,6 +444,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         token_cnt = (expert_token_nums_type == 0) ? token_cnt + current_tokens : current_tokens;
         num_recv_tokens_per_expert_list.emplace_back(token_cnt);
     }
+
     // Return values
     return {expandx_out,
             dynamic_scales_out,
@@ -556,6 +560,7 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
         }
         is_padding = false;
     }
+    recv_x.reset(); // release symetric address
 
     return {combined_x, recv_topk_weights, event};
 }
