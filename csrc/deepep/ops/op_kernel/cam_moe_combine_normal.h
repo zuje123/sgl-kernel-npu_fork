@@ -296,9 +296,9 @@ __aicore__ inline void CamMoeCombineNormal<TemplateMC2TypeFunc>::ReadBufferAndWe
         weightedSumQueue_.FreeTensor<XType>(tmpToken);
         PipeBarrier<PIPE_V>();
 
-        if (epRankId_ == 1) {
-            AscendC::DumpTensor(sumFloatBufLocal, 302, 16);
-        }
+        // if (epRankId_ == 1) {
+        //     AscendC::DumpTensor(sumFloatBufLocal, 302, 16);
+        // }
     }
     PipeBarrier<PIPE_V>();
     LocalTensor<XType> xOutLocal = xOutBuf_.Get<XType>();

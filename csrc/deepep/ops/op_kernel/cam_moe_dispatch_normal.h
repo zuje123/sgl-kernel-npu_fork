@@ -143,10 +143,10 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(GM_ADDR x, GM_ADD
 
     gva_gm = (GM_ADDR)(tilingData->shmemPtr);
 
-    GlobalTensor<int32_t> selfDataStatusTensor;
-    GM_ADDR statusDataSpaceGm = (GM_ADDR)(gva_gm);
-    selfDataStatusTensor.SetGlobalBuffer(
-        (__gm__ int32_t *)(statusDataSpaceGm + NOTIFY_MAGIC_OFFSET + blockIdx * WIN_ADDR_ALIGN));
+    // GlobalTensor<int32_t> selfDataStatusTensor;
+    // GM_ADDR statusDataSpaceGm = (GM_ADDR)(gva_gm);
+    // selfDataStatusTensor.SetGlobalBuffer(
+    //     (__gm__ int32_t *)(statusDataSpaceGm + NOTIFY_MAGIC_OFFSET + blockIdx * WIN_ADDR_ALIGN));
 
     batchSize = tilingData->camMoeDispatchNormalInfo.bs;
     globalBatchSize = tilingData->camMoeDispatchNormalInfo.globalBs;
@@ -173,17 +173,17 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::Init(GM_ADDR x, GM_ADD
     hUBAlignSize = Ceil(h * sizeof(ExpandXOutType), UB_ALIGN) * UB_ALIGN;
     uint32_t hScaleSizeAlign = hUBAlignSize + UB_ALIGN;
 
-    DataCacheCleanAndInvalid<int32_t, CacheLine::SINGLE_CACHE_LINE, DcciDst::CACHELINE_OUT>(selfDataStatusTensor);
-    dataState = selfDataStatusTensor(0);
-    if (dataState == 0) {
-        selfDataStatusTensor(0) = 1;
-    } else {
-        selfDataStatusTensor(0) = 0;
-    }
-    DataCacheCleanAndInvalid<int32_t, CacheLine::SINGLE_CACHE_LINE, DcciDst::CACHELINE_OUT>(selfDataStatusTensor);
-    PipeBarrier<PIPE_ALL>();
+    // DataCacheCleanAndInvalid<int32_t, CacheLine::SINGLE_CACHE_LINE, DcciDst::CACHELINE_OUT>(selfDataStatusTensor);
+    // dataState = selfDataStatusTensor(0);
+    // if (dataState == 0) {
+    //     selfDataStatusTensor(0) = 1;
+    // } else {
+    //     selfDataStatusTensor(0) = 0;
+    // }
+    // DataCacheCleanAndInvalid<int32_t, CacheLine::SINGLE_CACHE_LINE, DcciDst::CACHELINE_OUT>(selfDataStatusTensor);
+    // PipeBarrier<PIPE_ALL>();
 
-    winDataSizeOffset = WIN_MAGIC_OFFSET + dataState * HALF_WIN_STATE_OFFSET + NOTIFY_WIN_STATE_OFFSET;
+    // winDataSizeOffset = WIN_MAGIC_OFFSET + dataState * HALF_WIN_STATE_OFFSET + NOTIFY_WIN_STATE_OFFSET;
 
     hOutUBAlignSize = Ceil(hScaleSizeAlign, UB_ALIGN) * UB_ALIGN; // h_align_32b + scale(32b)
     if constexpr (DynamicQuant) {
@@ -351,9 +351,7 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::InputToDstOutput()
             xTmpTensor = xQueue.DeQue<ExpandXOutType>();
             DataCopyPad(dstGT, xTmpTensor, xOutCopyParams);
             xQueue.FreeTensor<ExpandXOutType>(xTmpTensor);
-            // if (epRankId == 0) {
-            //     AscendC::DumpTensor(dstGT, 351, 16);
-            // }
+
         }
     }
 }
@@ -425,8 +423,8 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::WaitShmemStatus()
     float sumOfFlag = static_cast<float>(-1.0);
     DataCopyParams intriParams{static_cast<uint16_t>(rankNumPerCore), 1, 0, 0};
 
-    uint64_t timeoutCheckStart = static_cast<uint64_t>(GetSystemCycle());
-    uint64_t timeoutCheckEnd, timeoutCheckDuration;
+    // uint64_t timeoutCheckStart = static_cast<uint64_t>(GetSystemCycle());
+    // uint64_t timeoutCheckEnd, timeoutCheckDuration;
     SyncFunc<AscendC::HardEvent::S_V>();
     while (sumOfFlag != compareTarget) {
         DataCopy(statusFp32Tensor, windowInstatusFp32Tensor[startRankId * STATE_OFFSET / sizeof(float)], intriParams);
@@ -435,12 +433,12 @@ __aicore__ inline void CamMoeDispatchNormal<CamTypeFunc>::WaitShmemStatus()
         SyncFunc<AscendC::HardEvent::V_S>();
         sumOfFlag = statusSumOutTensor.GetValue(0);
 
-        timeoutCheckEnd = static_cast<uint64_t>(GetSystemCycle());
-        timeoutCheckDuration = (timeoutCheckEnd - timeoutCheckStart) / CYCLE_TO_TIME;
-        if (timeoutCheckDuration > TIMEOUT_DETECTION_THRESHOLD) {
+        // timeoutCheckEnd = static_cast<uint64_t>(GetSystemCycle());
+        // timeoutCheckDuration = (timeoutCheckEnd - timeoutCheckStart) / CYCLE_TO_TIME;
+        // if (timeoutCheckDuration > TIMEOUT_DETECTION_THRESHOLD) {
             // printf("[normal_dispatch] WaitShmemStatus, rank:%d, coreId:%d, compareTarget:%d, sumOfFlag:%d\n",
             //     epRankId, blockIdx, compareTarget, sumOfFlag);
-        }
+        // }
     }
 
     // 清状态
