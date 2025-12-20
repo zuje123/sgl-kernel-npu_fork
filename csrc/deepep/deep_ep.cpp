@@ -47,7 +47,7 @@ torch::Tensor create_tensor_from_shmem(const std::vector<int64_t>& shape, at::Sc
     if (!dev_ptr) {
         throw std::runtime_error("shmem_malloc failed");
     }
-    printf("[tensor] rank:%d, bytes:%zu, dev_ptr:%p\n", rank, bytes, dev_ptr);
+    // printf("[tensor] rank:%d, bytes:%zu, dev_ptr:%p\n", rank, bytes, dev_ptr);
 
     auto options = torch::TensorOptions()
         .dtype(dtype)
@@ -57,7 +57,7 @@ torch::Tensor create_tensor_from_shmem(const std::vector<int64_t>& shape, at::Sc
         dev_ptr,
         c10::IntArrayRef(shape),
         [rank](void* ptr) { 
-            printf("[free_tensor] rank:%d, ptr:%p\n", rank, ptr);
+            // printf("[free_tensor] rank:%d, ptr:%p\n", rank, ptr);
             shmem_free(ptr);
         },
         options
@@ -94,13 +94,13 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
 
     shmem_enable = get_value_from_env("DEEPEP_SHMEM_ENABLE", 0) == 1 ? true : false;  // only open shmem with "1"
     if (shmem_enable) {
-        size_t local_mem_size = 2 * 1024 * 1024 * 1024UL;
+        size_t local_mem_size = 8 * 1024 * 1024 * 1024UL;
         size_t meta_data_size = 100 * 1024 * 1024UL;
         size_t ele_size = sizeof(int32_t);
         size_t num_of_int32 = meta_data_size / ele_size;
         EP_HOST_ASSERT(rank == internode::init(rank, num_ranks, local_mem_size, "tcp://127.0.0.1:11222")); // 由上层来初始化
         shmem_ptr = internode::alloc(num_of_int32, ele_size);
-        std::cout << "rank: " << rank << ", num_ranks: " << num_ranks << ", shmem_ptr: " << shmem_ptr << std::endl;
+        // std::cout << "rank: " << rank << ", num_ranks: " << num_ranks << ", shmem_ptr: " << shmem_ptr << std::endl;
     } else {
         if (moe_all_to_all_group_name.empty()) {
             char *ranktable_file = std::getenv("RANK_TABLE_FILE");
@@ -118,11 +118,11 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
 Buffer::~Buffer() noexcept(false)
 {
     if (shmem_enable) {
-        std::cout << "rank " << rank << " ~Buffer" << std::endl;
+        // std::cout << "rank " << rank << " ~Buffer" << std::endl;
         internode::free(shmem_ptr);
-        std::cout << "rank " << rank << " free done!!!" << std::endl;
+        // std::cout << "rank " << rank << " free done!!!" << std::endl;
         internode::finalize();
-        std::cout << "rank " << rank << " finalize done!!!" << std::endl;
+        // std::cout << "rank " << rank << " finalize done!!!" << std::endl;
     }
 }
 
@@ -405,17 +405,15 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
 
     at::Tensor expandx_out, dynamic_scales_out, expand_idx_out;
     if (shmem_enable) {
-        // 对称内存tesor，需要按 gBs * topk 进行预留大小
-        int64_t reserve_tokens = gBs * topk_num;
-        // std::cout << "[intranode_dispatch 3] rank " << rank << " gBs " << gBs << " reserve_tokens " << reserve_tokens << std::endl;
-        expandx_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, at::kInt, device, rank)
-                               : create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens, hidden}, x.scalar_type(), device, rank);
-        dynamic_scales_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{reserve_tokens}, at::kFloat, device, rank)
+        recv_data.reset(); // release symetric tensor
+        // std::cout << "[intranode_dispatch 3] rank " << rank << " gBs " << gBs << " num_recv_tokens " << num_recv_tokens << std::endl;
+        expandx_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{num_recv_tokens, hidden}, at::kInt, device, rank)
+                               : create_tensor_from_shmem(std::vector<int64_t>{num_recv_tokens, hidden}, x.scalar_type(), device, rank);
+        dynamic_scales_out = use_quant ? create_tensor_from_shmem(std::vector<int64_t>{num_recv_tokens}, at::kFloat, device, rank)
                                     : torch::empty({1}, at::dtype(at::kFloat).device(device));
         expand_idx_out = torch::empty({1}, at::dtype(at::kInt).device(device));  // not use
         // std::cout << "[intranode_dispatch 4] rank " << rank << " expandx_out " << expandx_out.sizes() << " dynamic_scales_out " << dynamic_scales_out.sizes() << std::endl;
 
-        recv_data.reset(); // release symetric tensor
     } else {
         // 普通tensor按实际接收预留大小
         expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
@@ -560,7 +558,7 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
         }
         is_padding = false;
     }
-    recv_x.reset(); // release symetric address
+    // recv_x.reset(); // release symetric address
 
     return {combined_x, recv_topk_weights, event};
 }
