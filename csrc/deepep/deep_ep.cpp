@@ -83,7 +83,8 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
 
     shmem_enable = (get_value_from_env("DEEPEP_SHMEM_ENABLE", 0) == 1);  // only open shmem with "1"
     if (shmem_enable) {
-        size_t local_mem_size = 8 * 1024 * 1024 * 1024UL;
+        int shmem_mem_size = get_value_from_env("SHMEM_SYMMETRIC_SIZE", 2048);
+        size_t local_mem_size = shmem_mem_size * 1024 * 1024UL;
         size_t meta_data_size = 100 * 1024 * 1024UL;
         size_t ele_size = sizeof(int32_t);
         size_t num_of_int32 = meta_data_size / ele_size;
@@ -91,10 +92,12 @@ Buffer::Buffer(int64_t rank, int64_t num_ranks, int64_t num_nvl_bytes, int64_t n
         // To be initialized by the caller
         EP_HOST_ASSERT(rank == internode::init(rank, num_ranks, local_mem_size, "tcp://127.0.0.1:11222"));
         shmem_ptr = internode::alloc(num_of_int32, ele_size);
+        // std::cout << "rank: " << rank << ", num_ranks: " << num_ranks << ", shmem_mem_size: " << shmem_mem_size
+        //           << ", shmem_ptr: " << shmem_ptr << std::endl;
     } else {
         if (moe_all_to_all_group_name.empty()) {
             char *ranktable_file = std::getenv("RANK_TABLE_FILE");
-            EP_HOST_ASSERT(ranktable_file != nullptr)
+            EP_HOST_ASSERT(ranktable_file != nullptr);
             ACL_CHECK(aclrtGetDevice(&device_id));
 
             // ep domain

@@ -230,9 +230,9 @@ def test_main(
             assert (check_x[check_start:check_end, :].int() - i).sum().item() == 0
             check_start = check_end
 
-    def get_num_tokens_per_expert_list(rank: int):
+    def get_num_tokens_per_expert_list(rank: int, type=1):
         local_expert_token = gbl_num_tokens_per_expert.view(num_ranks, -1)[rank]
-        if expert_token_nums_type == 0:
+        if type == 0:
             local_expert_token_list = local_expert_token.cumsum(
                 dim=0
             ).tolist()  # 计算前缀和并转为 list
@@ -292,7 +292,9 @@ def test_main(
             )
 
             # Checks notify output
-            local_expert_token_list = get_num_tokens_per_expert_list(rank)
+            local_expert_token_list = get_num_tokens_per_expert_list(
+                rank, expert_token_nums_type
+            )
             assert local_expert_token_list == recv_num_tokens_per_expert_list
 
             all_recv_count = handle[8]
@@ -350,10 +352,14 @@ def test_main(
         print(f"[layout] Kernel performance: {avg_t * 1000:.3f} ms", flush=True)
         print("", flush=True)
 
-        # test dispatch+combine
         current_x = x
+        local_expert_token_list = get_num_tokens_per_expert_list(rank, 1)
+        real_recv_tokens = sum(local_expert_token_list)
+        dispatch_bf16_recv_bytes = real_recv_tokens * hidden * 2
+        combine_bf16_send_bytes = dispatch_bf16_recv_bytes
 
-        def test_func():
+        # test dispatch
+        def test_dispatch_func():
             tune_dispatch_args = {
                 "x": current_x,
                 "config": config,
@@ -372,6 +378,37 @@ def test_main(
                 event,
             ) = buffer.dispatch(**tune_dispatch_args)
 
+            del recv_x  # release symmetric tensor
+
+        avg_t, min_t, max_t = bench(partial(test_dispatch_func))
+        if local_rank == 0:
+            print(
+                f"[tuning] Dispatch {dispatch_bf16_recv_bytes / 1e9 / avg_t:.2f} GB/s (HCCS), avg_t: {avg_t * 1e6:.2f} us",
+                flush=True,
+            )
+            print("", flush=True)
+
+        # test combine
+        dispatch_args = {
+            "x": current_x,
+            "config": config,
+            "num_tokens_per_rank": ref_num_tokens_per_rank,
+            "is_token_in_rank": ref_is_token_in_rank,
+            "num_tokens_per_expert": ref_num_tokens_per_expert,
+            "topk_idx": topk_idx,
+            "topk_weights": topk_weights,
+        }
+        (
+            recv_x,
+            recv_topk_idx,
+            recv_topk_weights,
+            recv_num_tokens_per_expert_list,
+            handle,
+            event,
+        ) = buffer.dispatch(**dispatch_args)
+        recv_x = per_token_cast_back(*recv_x) if isinstance(recv_x, tuple) else recv_x
+
+        def test_combine_func():
             tune_combine_args = {
                 "x": recv_x,
                 "handle": handle,
@@ -383,25 +420,10 @@ def test_main(
                 **tune_combine_args
             )
 
-            del recv_x  # release symmetric tensor
-
-        local_expert_token_list = get_num_tokens_per_expert_list(rank)
-        real_recv_tokens = sum(local_expert_token_list)
-        dispatch_bf16_recv_bytes = real_recv_tokens * hidden * 2
-        combine_bf16_send_bytes = dispatch_bf16_recv_bytes
-
-        notify_t, dispatch_t, combine_t = bench_kineto(
-            partial(test_func),
-            kernel_names=(
-                "ShmemNotifyDispatch",
-                "ShmemMoeDispatchNormal",
-                "ShmemMoeCombineNormal",
-            ),
-        )
+        avg_t, min_t, max_t = bench(partial(test_combine_func))
         if local_rank == 0:
             print(
-                f"[tuning] Notify avg_t: {notify_t * 1e6:.2f} us | Dispatch {dispatch_bf16_recv_bytes / 1e9 / dispatch_t:.2f} GB/s (HCCS), avg_t: {dispatch_t * 1e6:.2f} us | "
-                f"Combine {combine_bf16_send_bytes / 1e9 / combine_t:.2f} GB/s (HCCS), avg_t: {combine_t * 1e6:.2f} us",
+                f"[tuning] Combine {combine_bf16_send_bytes / 1e9 / avg_t:.2f} GB/s (HCCS), avg_t: {avg_t * 1e6:.2f} us",
                 flush=True,
             )
             print("", flush=True)
