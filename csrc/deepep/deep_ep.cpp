@@ -166,7 +166,7 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
 
 torch::Tensor Buffer::get_notify_send_data()
 {
-    return this->notify_send_data;
+    return this->send_token_idx_small;
 }
 
 int Buffer::get_num_rdma_ranks() const
@@ -330,6 +330,20 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
 
     int64_t trt = total_recv_token.item<int>();
     int num_recv_tokens = (trt == 0) ? 1 : trt;
+
+    if (rank == 0) {
+        std::cout << "[intranode_dispatch] rank: " << rank << ", trt: " << trt << ", num_recv_tokens: " << num_recv_tokens << std::endl;
+        // std::cout << "[intranode_dispatch] rank: " << rank << " send_token_idx_small \n" << send_token_idx_small 
+        //     << "\n send_data_offset \n" << send_data_offset.cpu() 
+        //     << "\n recv_offset \n" << recv_offset.cpu() 
+        //     << "\n recv_count \n" << recv_count.cpu() 
+        //     << "\n expert_global_offset \n" << expert_global_offset.cpu() 
+        //     << "\n srcrank_in_expert_offset \n" << srcrank_in_expert_offset.cpu() 
+        //     << "\n r_in_srcrank_offset \n" << r_in_srcrank_offset.cpu() 
+        //     << std::endl;
+    }
+
+
     auto expandx_out = use_quant ? torch::empty({num_recv_tokens, hidden}, at::dtype(at::kChar).device(x.device()))
                                  : torch::empty({num_recv_tokens, hidden}, x.options());
     auto dynamic_scales_out = torch::empty({num_recv_tokens}, at::dtype(at::kFloat).device(x.device()));

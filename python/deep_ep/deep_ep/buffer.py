@@ -58,6 +58,7 @@ class Buffer:
             low_latency_mode,
             moe_all_to_all_group_name,
         )
+        self.layer=1
 
     @staticmethod
     def get_dispatch_config(num_ranks: int) -> Config:
@@ -178,6 +179,12 @@ class Buffer:
             is_token_in_rank: `[num_tokens, num_ranks]` with `torch.int`, whether a token be sent to a rank.
             event: the event after executing the kernel (valid only if `async_finish` is set).
         """
+        print(f'[layout] {self.rank=} {self.layer=} {topk_idx=}')
+        data = {
+            'topk_idx':topk_idx,
+            'num_experts':num_experts,
+        }
+        # torch.save(data,f'./layout_rank_{self.rank}_{self.layer}_tensor.pt')
         (
             num_tokens_per_rank,
             num_tokens_per_rdma_rank,
@@ -297,6 +304,16 @@ class Buffer:
             handle: the returned communication handle.
             event: the event after executing the kernel (valid only if `async_finish` is set).
         """
+        print(f'[dispatch] {self.rank=}, {self.layer=}')
+        data = {
+            'x': x,
+            'topk_weights': topk_weights,
+        }
+        # torch.save(data,f'./dispatch_rank_{self.rank}_{self.layer}_tensor.pt')
+
+        send_token_idx_small = self.runtime.get_notify_send_data()
+        print(f'[dispatch] {self.rank=}, {self.layer=}, {send_token_idx_small=}, {num_tokens_per_expert=}')
+
         # Default config
         config = self.get_dispatch_config(self.group_size) if config is None else config
 
@@ -512,6 +529,13 @@ class Buffer:
             recv_topk_weights: the reduced top-k weights from its dispatch ranks.
             event: the event after executing the kernel (valid only if `async_finish` is set).
         """
+        print(f'[combine] {self.rank=}, {self.layer=}')
+        data = {
+            'x': x,
+            'handle': handle,
+        }
+        # torch.save(data,f'./combine_rank_{self.rank}_{self.layer}_tensor.pt')
+        self.layer += 1
         # Internode
         if self.runtime.get_num_rdma_ranks() > 1:
             return self.internode_combine(
