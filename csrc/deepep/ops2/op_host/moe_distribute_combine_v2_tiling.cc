@@ -678,9 +678,9 @@ static bool CheckTensorShape(const gert::TilingContext *context, MoeDistributeCo
     int64_t expertIdsDim0 = expertIdsStorageShape->GetStorageShape().GetDim(0);
     int64_t expertIdsDim1 = expertIdsStorageShape->GetStorageShape().GetDim(1);
     int64_t moeExpertNum = static_cast<int64_t>(tilingData.moeDistributeCombineV2Info.moeExpertNum);
-    OP_TILING_CHECK((expertIdsDim1 <= 0) || (expertIdsDim1 > K_MAX || (expertIdsDim1 > moeExpertNum)),
+    OP_TILING_CHECK((expertIdsDim1 < 0) || (expertIdsDim1 > K_MAX || (expertIdsDim1 > moeExpertNum)),
                     OP_LOGE(nodeName,
-                            "expertIds's dim1(K) should be in (0, min(%ld, moeExpetNum %ld)], "
+                            "expertIds's dim1(K) should be in [0, min(%ld, moeExpetNum %ld)], "
                             "but got expertIds's dim1=%ld.",
                             K_MAX, moeExpertNum, expertIdsDim1),
                     return false);
