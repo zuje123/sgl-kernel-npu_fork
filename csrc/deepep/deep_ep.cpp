@@ -101,29 +101,11 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     EP_HOST_ASSERT(num_experts > 0);
     EP_HOST_ASSERT(topk_idx.size(0) <= round * per_round_tokens);
 
-    this->new_topk_idx = topk_idx;
-    // for padding
-    if (topk_idx.size(0) < PADDING_SIZE) {
-        this->is_padding = true;
-        this->padding_cnt = PADDING_SIZE - topk_idx.size(0);
-        std::vector<at::Tensor> topk_blocks;
-        if (topk_idx.size(0) != 0) {
-            topk_blocks.emplace_back(topk_idx);
-        }
-        int topk = static_cast<int>(topk_idx.size(1));
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_topk = torch::arange(0, topk, topk_idx.options()).reshape({1, topk});
-            topk_blocks.emplace_back(tmp_topk);
-        }
-        this->new_topk_idx = torch::cat(topk_blocks, 0);
-    }
-
-    const int num_tokens = new_topk_idx.size(0);
-    const int num_topk = new_topk_idx.size(1);
+    const int num_tokens = topk_idx.size(0);
+    const int num_topk = topk_idx.size(1);
     const int local_ranksize = LOCAL_RANK_SIZE;
     auto server_num = num_ranks / local_ranksize;
-
-    auto device = new_topk_idx.device();
+    auto device = topk_idx.device();
 
     auto num_tokens_per_expert = at::zeros({round, num_experts}, at::dtype(at::kInt).device(device));
     auto num_tokens_per_rank = at::zeros({num_ranks}, at::dtype(at::kInt).device(device));
@@ -152,7 +134,7 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts, std:
     auto send_token_idx_small = at::zeros({num_tokens, num_topk}, at::dtype(at::kInt).device(device));
     auto notify_send_data = at::zeros({notify_send_data_size}, at::dtype(at::kInt).device(device));
     int32_t rank_id = static_cast<int>(rank);
-    EXEC_NPU_CMD(aclnnDispatchLayout, new_topk_idx, num_tokens, num_ranks, num_experts, num_topk, local_ranksize,
+    EXEC_NPU_CMD(aclnnDispatchLayout, topk_idx, num_tokens, num_ranks, num_experts, num_topk, local_ranksize,
                  per_round_tokens, rank_id, num_tokens_per_rank, num_tokens_per_expert, is_token_in_rank,
                  notify_send_data, send_token_idx_small);
 
@@ -199,7 +181,6 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     EP_HOST_ASSERT(config.num_sms % 2 == 0);
     int num_channels = config.num_sms / 2;
 
-    at::Tensor expert_ids = new_topk_idx.to(at::kInt);
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
@@ -210,24 +191,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     auto rank_prefix_matrix = at::empty({num_ranks, num_ranks}, at::dtype(at::kInt).device(x.device()));
     auto channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
     auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
-
     at::Tensor new_x = x;
-    // for padding
-    if (topk_idx->size(0) < PADDING_SIZE) {
-        this->is_padding = true;
-        this->padding_cnt = PADDING_SIZE - topk_idx->size(0);
-        std::vector<at::Tensor> x_blocks;
-        if (topk_idx->size(0) != 0) {
-            x_blocks.emplace_back(x);
-        } else {
-            this->ori_x = x.clone();
-        }
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_x = torch::ones({1, x.size(1)}, x.options()) * (i + 1) * 2;
-            x_blocks.emplace_back(tmp_x);
-        }
-        new_x = torch::cat(x_blocks, 0);
-    }
 
     EP_HOST_ASSERT(num_tokens_per_rank.has_value());
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
@@ -250,12 +214,13 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
     // Top-k checks
     int num_topk = 0;
     EP_HOST_ASSERT(topk_idx.has_value());
+    at::Tensor expert_ids = topk_idx.value().to(at::kInt);
     if (topk_idx.has_value()) {
         num_topk = static_cast<int>(topk_idx->size(1));
         EP_HOST_ASSERT(num_experts > 0);
         EP_HOST_ASSERT(topk_idx->dim() == 2 and topk_idx->is_contiguous());
         EP_HOST_ASSERT(topk_weights->dim() == 2 and topk_weights->is_contiguous());
-        EP_HOST_ASSERT(num_tokens == new_topk_idx.size(0));
+        EP_HOST_ASSERT(num_tokens == topk_idx->size(0));
         EP_HOST_ASSERT(num_topk == topk_weights->size(1));
         EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
     }
@@ -342,6 +307,7 @@ Buffer::intranode_dispatch(const at::Tensor &x, const std::optional<at::Tensor> 
         recv_topk_idx = at::empty({trt, num_topk}, topk_idx->options());
         recv_topk_weights = at::empty({trt, num_topk}, topk_weights->options());
     }
+
     EXEC_NPU_CMD(aclnnCamMoeDispatchNormal, new_x, expert_ids, send_data_offset, send_token_idx_small, recv_offset,
                  recv_count, expert_global_offset, srcrank_in_expert_offset, r_in_srcrank_offset, hcom_ep_name,
                  num_ranks,  // rankSize
@@ -400,7 +366,6 @@ Buffer::notify_verify(const at::Tensor &x, const std::optional<at::Tensor> &x_sc
     EP_HOST_ASSERT(config.num_sms % 2 == 0);
     int num_channels = config.num_sms / 2;
 
-    at::Tensor expert_ids = new_topk_idx.to(at::kInt);
     int64_t tp_size = 1;
     int64_t tp_rank = 0;
     int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
@@ -411,24 +376,7 @@ Buffer::notify_verify(const at::Tensor &x, const std::optional<at::Tensor> &x_sc
     auto rank_prefix_matrix = at::empty({num_ranks, num_ranks}, at::dtype(at::kInt).device(x.device()));
     auto channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
     auto recv_channel_prefix_matrix = at::empty({num_ranks, num_channels}, at::dtype(at::kInt).device(x.device()));
-
     at::Tensor new_x = x;
-    // for padding
-    if (topk_idx->size(0) < PADDING_SIZE) {
-        this->is_padding = true;
-        this->padding_cnt = PADDING_SIZE - topk_idx->size(0);
-        std::vector<at::Tensor> x_blocks;
-        if (topk_idx->size(0) != 0) {
-            x_blocks.emplace_back(x);
-        } else {
-            this->ori_x = x.clone();
-        }
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_x = torch::ones({1, x.size(1)}, x.options()) * (i + 1) * 2;
-            x_blocks.emplace_back(tmp_x);
-        }
-        new_x = torch::cat(x_blocks, 0);
-    }
 
     EP_HOST_ASSERT(num_tokens_per_rank.has_value());
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
@@ -451,12 +399,13 @@ Buffer::notify_verify(const at::Tensor &x, const std::optional<at::Tensor> &x_sc
     // Top-k checks
     int num_topk = 0;
     EP_HOST_ASSERT(topk_idx.has_value());
+    at::Tensor expert_ids = topk_idx.value().to(at::kInt);
     if (topk_idx.has_value()) {
         num_topk = static_cast<int>(topk_idx->size(1));
         EP_HOST_ASSERT(num_experts > 0);
         EP_HOST_ASSERT(topk_idx->dim() == 2 and topk_idx->is_contiguous());
         EP_HOST_ASSERT(topk_weights->dim() == 2 and topk_weights->is_contiguous());
-        EP_HOST_ASSERT(num_tokens == new_topk_idx.size(0));
+        EP_HOST_ASSERT(num_tokens == expert_ids.size(0));
         EP_HOST_ASSERT(num_topk == topk_weights->size(1));
         EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
     }
@@ -543,37 +492,17 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
 {
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
     at::Tensor recv_x = x;
-
-    at::Tensor topk_idx_p = topk_idx;
-    if (this->is_padding) {
-        topk_idx_p = this->new_topk_idx;
-    }
-
-    auto topk_idx_int32 = topk_idx_p.to(at::kInt);
+    auto topk_idx_int32 = topk_idx.to(at::kInt);
     at::Tensor token_src_info = src_idx;
     at::Tensor ep_send_counts = send_head;
     auto device = x.device();
 
-    const int num_tokens = topk_idx_p.size(0);
-    const int num_topk = topk_idx_p.size(1);
+    const int num_tokens = topk_idx.size(0);
+    const int num_topk = topk_idx.size(1);
     at::Tensor expert_scales;
     // for padding
     if (topk_weights.has_value()) {
-        if (!this->is_padding) {
-            expert_scales = topk_weights.value();
-        } else {
-            std::vector<at::Tensor> weight_blocks;
-            if (topk_weights->size(0) != 0) {
-                weight_blocks.emplace_back(topk_weights.value());
-            }
-            for (int i = 0; i < this->padding_cnt; i++) {
-                if (topk_weights.has_value()) {
-                    at::Tensor tmp_weight = torch::arange(0, num_topk, topk_weights->options()).reshape({1, num_topk});
-                    weight_blocks.emplace_back(tmp_weight);
-                }
-            }
-            expert_scales = torch::cat(weight_blocks, 0);
-        }
+        expert_scales = topk_weights.value();
     } else {
         expert_scales = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
     }
@@ -611,15 +540,6 @@ Buffer::intranode_combine(const torch::Tensor &x, const torch::Tensor &topk_idx,
                  tp_send_counts, hcom_ep_name, num_ranks, rank, hcom_ep_name, tp_world_size, tp_rankId,
                  moe_expert_number, real_max_bs, round, per_round_tokens, combined_x, combine_send_cost_stats_out);
 
-    if (this->is_padding) {
-        if (this->padding_cnt == PADDING_SIZE) {
-            combined_x = this->ori_x;
-        } else {
-            combined_x = combined_x.slice(0, 0, PADDING_SIZE - this->padding_cnt);
-        }
-        is_padding = false;
-    }
-
     return {combined_x, recv_topk_weights, event};
 }
 
@@ -638,22 +558,6 @@ Buffer::internode_dispatch(
     int num_channels = config.num_sms / 2;
 
     at::Tensor new_x = x;
-    // for padding
-    if (topk_idx->size(0) < PADDING_SIZE) {
-        this->is_padding = true;
-        this->padding_cnt = PADDING_SIZE - topk_idx->size(0);
-        std::vector<at::Tensor> x_blocks;
-        if (topk_idx->size(0) != 0) {
-            x_blocks.emplace_back(x);
-        } else {
-            this->ori_x = x.clone();
-        }
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_x = torch::zeros({1, x.size(1)}, x.options());
-            x_blocks.emplace_back(tmp_x);
-        }
-        new_x = torch::cat(x_blocks, 0);
-    }
     EP_HOST_ASSERT(num_tokens_per_rank.has_value());
     EP_HOST_ASSERT(num_tokens_per_expert.has_value());
 
@@ -675,33 +579,21 @@ Buffer::internode_dispatch(
     // Top-k checks
     int num_topk = 0;
     EP_HOST_ASSERT(topk_idx.has_value());
+    at::Tensor expert_ids = topk_idx.value().to(at::kInt);
     if (topk_idx.has_value()) {
         num_topk = static_cast<int>(topk_idx->size(1));
         EP_HOST_ASSERT(num_experts > 0);
         EP_HOST_ASSERT(topk_idx->dim() == 2 and topk_idx->is_contiguous());
         EP_HOST_ASSERT(topk_weights->dim() == 2 and topk_weights->is_contiguous());
-        EP_HOST_ASSERT(num_tokens == new_topk_idx.size(0));
+        EP_HOST_ASSERT(num_tokens == expert_ids.size(0));
         EP_HOST_ASSERT(num_topk == topk_weights->size(1));
         EP_HOST_ASSERT(topk_weights->scalar_type() == at::kFloat);
     }
 
     auto device = x.device();
     at::Tensor new_topk_weights;
-    // for padding
     if (topk_weights.has_value()) {
-        if (!this->is_padding) {
-            new_topk_weights = topk_weights.value();
-        } else {
-            std::vector<at::Tensor> weight_blocks;
-            if (topk_weights->size(0) != 0) {
-                weight_blocks.emplace_back(topk_weights.value());
-            }
-            for (int i = 0; i < this->padding_cnt; i++) {
-                at::Tensor tmp_weight = torch::arange(0, num_topk, topk_weights->options()).reshape({1, num_topk});
-                weight_blocks.emplace_back(tmp_weight);
-            }
-            new_topk_weights = torch::cat(weight_blocks, 0);
-        }
+        new_topk_weights = topk_weights.value();
     } else {
         new_topk_weights = at::ones({num_tokens, num_topk}, at::dtype(at::kFloat).device(device));
     }
@@ -730,9 +622,7 @@ Buffer::internode_dispatch(
 
     int64_t quant_mode = use_quant ? DYNAMIC_SCALES : NO_SCALES;
     int64_t global_bs = static_cast<int64_t>(MAX_BATCH_SIZE * num_ranks);
-    at::Tensor expert_ids = new_topk_idx.to(at::kInt);
     at::Tensor xActiveMask = at::empty({1}, at::dtype(at::kInt).device(x.device()));
-
     auto expertTokenNums = at::zeros({1}, at::dtype(at::kLong).device(x.device()));
     auto epRecvCount = at::zeros({1}, at::dtype(at::kInt).device(x.device()));
     auto tpRecvCount = at::zeros({1}, at::dtype(at::kInt).device(x.device()));
@@ -847,22 +737,15 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
 {
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous());
     at::Tensor recv_x = x;
-
-    at::Tensor topk_idx_p = topk_idx;
-    if (this->is_padding) {
-        topk_idx_p = this->new_topk_idx;
-    }
-
-    auto topk_idx_int32 = topk_idx_p.to(at::kInt);
-    at::Tensor expert_ids = topk_idx_int32;
+    at::Tensor expert_ids = topk_idx.to(at::kInt);
     // In the A2 implementation, the tensor is expanded from [bs, k] to [bs, num_expert].
     at::Tensor expand_idx = src_idx;
     // A2 needs global send counts, [num_expert, num_rank]
     at::Tensor ep_send_counts = send_head;
     auto device = x.device();
 
-    const int num_tokens = topk_idx_p.size(0);
-    const int num_topk = topk_idx_p.size(1);
+    const int num_tokens = topk_idx.size(0);
+    const int num_topk = topk_idx.size(1);
     at::Tensor expert_scales = at::empty({1}, at::dtype(at::kFloat).device(x.device()));
 
     int64_t hidden = static_cast<int>(recv_x.size(1));
@@ -881,7 +764,7 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
     }
 
     // Combine data
-    auto combined_x = torch::empty({new_topk_idx.size(0), hidden}, x.options());
+    auto combined_x = torch::empty({topk_idx.size(0), hidden}, x.options());
     std::optional<torch::Tensor> recv_topk_weights;
     std::optional<EventHandle> event;
     at::Tensor x_active_mask, activation_scale, weight_scale, group_list;
@@ -889,21 +772,14 @@ std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandl
     int64_t out_dtype = 0;
     int64_t comm_quant_mode = 0;
     int64_t group_list_type = 0;
+    at::Tensor combine_send_cost_stats_out;
 
     EXEC_NPU_CMD(aclnnMoeDistributeCombineA2, recv_x, expert_ids, expand_idx, ep_send_counts, expert_scales,
                  tp_send_counts, x_active_mask, activation_scale, weight_scale, group_list, expand_scales, offsetInner,
                  offsetOuter, countOuter, hcom_ep_name, num_ranks, rank, moe_expert_number, hcom_ep_name, tp_world_size,
                  tp_rankId, expert_shared_type, shared_expert_num, shared_expert_rank_num, global_bs, out_dtype,
-                 comm_quant_mode, group_list_type, combined_x);
+                 comm_quant_mode, group_list_type, combined_x, combine_send_cost_stats_out);
 
-    if (this->is_padding) {
-        if (this->padding_cnt == PADDING_SIZE) {
-            combined_x = this->ori_x;
-        } else {
-            combined_x = combined_x.slice(0, 0, PADDING_SIZE - this->padding_cnt);
-        }
-        is_padding = false;
-    }
     return {combined_x, recv_topk_weights, event};
 }
 
@@ -914,36 +790,12 @@ Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
                              int64_t num_max_dispatch_tokens_per_rank, int64_t num_experts, bool use_fp8,
                              bool round_scale, bool use_ue8m0, bool async, bool return_recv_hook)
 {
-    this->is_padding = false;
     EP_HOST_ASSERT(low_latency_mode);
     at::Tensor new_x = x;
-    this->new_topk_idx = topk_idx;
-    if (topk_idx.size(0) < PADDING_SIZE) {
-        this->is_padding = true;
-        this->padding_cnt = PADDING_SIZE - topk_idx.size(0);
-        std::vector<at::Tensor> x_blocks;
-        std::vector<at::Tensor> topk_blocks;
-        if (topk_idx.size(0) != 0) {
-            x_blocks.emplace_back(x);
-            topk_blocks.emplace_back(topk_idx);
-        } else {
-            this->ori_x = x.clone();
-        }
-        int topk = static_cast<int>(new_topk_idx.size(1));
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_x = torch::ones({1, x.size(1)}, x.options());
-            at::Tensor tmp_topk = torch::arange(0, topk, topk_idx.options()).reshape({1, topk});
-            x_blocks.emplace_back(tmp_x);
-            topk_blocks.emplace_back(tmp_topk);
-        }
-        new_x = torch::cat(x_blocks, 0);
-        this->new_topk_idx = torch::cat(topk_blocks, 0);
-    }
+    EP_HOST_ASSERT(num_max_dispatch_tokens_per_rank >= x.size(0));
 
-    EP_HOST_ASSERT(num_max_dispatch_tokens_per_rank >= new_x.size(0));
-
-    auto num_tokens = static_cast<int>(new_x.size(0)), hidden = static_cast<int>(new_x.size(1));
-    auto num_scales = hidden / 128, num_topk = static_cast<int>(new_topk_idx.size(1));
+    auto num_tokens = static_cast<int>(x.size(0)), hidden = static_cast<int>(x.size(1));
+    auto num_scales = hidden / 128, num_topk = static_cast<int>(topk_idx.size(1));
     int32_t num_local_experts = num_experts / (num_ranks - shared_expert_rank_num);
     int64_t global_bs = num_max_dispatch_tokens_per_rank * num_ranks;
     auto num_max_tokens = 0;
@@ -956,9 +808,9 @@ Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
     auto max_size = std::max(num_tokens * num_topk, num_max_tokens * 128);
 
     // Allocate packed tensors
-    auto device = new_x.device();
+    auto device = x.device();
     auto packed_recv_x =
-        at::empty({num_max_tokens, hidden}, new_x.options().dtype(use_fp8 ? at::kChar : at::kBFloat16));
+        at::empty({num_max_tokens, hidden}, x.options().dtype(use_fp8 ? at::kChar : at::kBFloat16));
     auto packed_recv_x_scales = at::empty({num_max_tokens}, at::dtype(at::kFloat).device(device));
     auto expandIdx = at::empty({max_size}, at::dtype(at::kInt).device(device));
 
@@ -1009,10 +861,10 @@ Buffer::low_latency_dispatch(const at::Tensor &x, const at::Tensor &topk_idx,
 
     if (enable_neg_one) {
         EP_HOST_ASSERT(isLayered == false);
-        active_mask = (new_topk_idx >= 0).to(torch::kBool);
+        active_mask = (topk_idx >= 0).to(torch::kBool);
     }
 
-    EXEC_NPU_CMD(aclnnMoeDistributeDispatchV2, new_x, new_topk_idx,
+    EXEC_NPU_CMD(aclnnMoeDistributeDispatchV2, x, topk_idx,
                  scales,        // smooth scales,
                  active_mask,   // active_mask
                  hcom_ep_name,  // ep
@@ -1045,25 +897,9 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     const at::Tensor &packed_recv_count, bool zero_copy, bool async, bool return_recv_hook,
     const std::optional<at::Tensor> &out)
 {
-    at::Tensor new_idx = topk_idx;
-    at::Tensor new_scales = topk_weights;
-    if (this->is_padding) {
-        std::vector<at::Tensor> scales_blocks;
-        if (this->padding_cnt != PADDING_SIZE) {
-            scales_blocks.emplace_back(topk_weights);
-        }
-        for (int i = 0; i < this->padding_cnt; i++) {
-            at::Tensor tmp_scales = torch::zeros({1, topk_weights.size(1)}, topk_weights.options());
-            scales_blocks.emplace_back(tmp_scales);
-        }
-        new_idx = this->new_topk_idx;
-        this->new_scales = torch::cat(scales_blocks, 0);
-        new_scales = this->new_scales;
-    }
     // Tensor checks
     EP_HOST_ASSERT(x.dim() == 2 and x.is_contiguous() and x.scalar_type() == at::kBFloat16);
-    EP_HOST_ASSERT(num_max_dispatch_tokens_per_rank >= new_idx.size(0));
-    // EP_HOST_ASSERT(x.size(0) == num_experts / num_ranks);
+    EP_HOST_ASSERT(num_max_dispatch_tokens_per_rank >= topk_idx.size(0));
 
     // get ep & tp name
     char hcom_ep_name[HCOMM_NAME_LEN];
@@ -1076,10 +912,10 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
 
     auto device = x.device();
     at::Tensor expand_x = x;
-    at::Tensor expert_ids = new_idx;
+    at::Tensor expert_ids = topk_idx;
     at::Tensor expand_idx = src_info;  // handle[0] = src_info
     at::Tensor ep_send_counts = layout_range;
-    at::Tensor expert_scales = new_scales;
+    at::Tensor expert_scales = topk_weights;
     at::Tensor tp_send_counts = at::empty({1}, at::dtype(at::kInt).device(device));
     at::Tensor x_active_mask, activation_scale, weight_scale, group_list, expand_scales;
     int enable_neg_one = get_value_from_env("MOE_ENABLE_TOPK_NEG_ONE", 0);
@@ -1092,8 +928,9 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
     int64_t group_list_type = 0;
     bool isLayered = false;
     char *comm_alg;
+    at::Tensor combine_send_cost_stats_out;
 
-    auto num_combined_tokens = static_cast<int>(new_scales.size(0));
+    auto num_combined_tokens = static_cast<int>(topk_weights.size(0));
     auto hidden = static_cast<int>(x.size(1));
     at::Tensor shared_expert_x{nullptr};
     at::Tensor combined_x = at::empty({num_combined_tokens, hidden}, x.options());
@@ -1115,22 +952,15 @@ std::tuple<at::Tensor, std::optional<EventHandle>, std::optional<std::function<v
 
     if (enable_neg_one) {
         EP_HOST_ASSERT(isLayered == false);
-        x_active_mask = (new_topk_idx >= 0).to(torch::kBool);
+        x_active_mask = (expert_ids >= 0).to(torch::kBool);
     }
 
     EXEC_NPU_CMD(aclnnMoeDistributeCombineV2, expand_x, expert_ids, expand_idx, ep_send_counts, expert_scales,
                  tp_send_counts, x_active_mask, activation_scale, weight_scale, group_list, expand_scales,
                  shared_expert_x, hcom_ep_name, num_ranks, rank, num_experts, hcom_tp_name, tp_world_size, tp_rankId,
                  expert_shared_type, shared_expert_num, shared_expert_rank_num, global_bs, out_dtype, comm_quant_mode,
-                 group_list_type, comm_alg, combined_x);
-    if (this->is_padding) {
-        if (this->padding_cnt == PADDING_SIZE) {
-            combined_x = this->ori_x;
-        } else {
-            combined_x = combined_x.slice(0, 0, PADDING_SIZE - this->padding_cnt);
-        }
-        is_padding = false;
-    }
+                 group_list_type, comm_alg, combined_x, combine_send_cost_stats_out);
+
     return {combined_x, event, std::function<void()>([] {})};
 }
 
