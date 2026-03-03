@@ -33,7 +33,7 @@ extern "C" {
  * @param [in] scale2: The second scale tensor.
  * @param [in] probs: The probabilities tensor.
  * @param [in] group: string identifying the communication domain name.
- * @param [in] globalBs: The global size for ep.
+ * @param [in] maxOutputSize: The maximum output size.
  * @param [out] out: result of computation + communication; same dtype as input.
  * @param [out] workspaceSize: workspace size to allocate on the NPU device side.
  * @param [out] executor: op executor containing the operator compute flow.
@@ -42,8 +42,8 @@ extern "C" {
 __attribute__((visibility("default"))) aclnnStatus aclnnDispatchFFNCombineGetWorkspaceSize(
     const aclTensor *x, const aclTensorList *weight1, const aclTensorList *weight2, const aclTensor *expertId,
     const aclTensorList *scale1, const aclTensorList *scale2, const aclTensor *probs, const char *group,
-    int64_t globalBs, const aclTensor *out, const aclTensor *expertTokenNums,
-    uint64_t *workspaceSize, aclOpExecutor **executor);
+    int64_t maxOutputSize, const aclTensor *out, const aclTensor *expertTokenNums, uint64_t *workspaceSize,
+    aclOpExecutor **executor);
 
 /**
  * @brief Second-stage interface of aclnnDispatchFFNCombine to execute computation.
