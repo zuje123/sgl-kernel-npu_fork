@@ -854,10 +854,10 @@ class Buffer:
         x: torch.Tensor,
         topk_idx: torch.Tensor,
         topk_weights: torch.Tensor,
-        gmm1_permuted_weight: torch.Tensor,
-        gmm1_permuted_weight_scale: torch.Tensor,
-        gmm2_weight: torch.Tensor,
-        gmm2_weight_scale: torch.Tensor,
+        gmm1_permuted_weight: torch.Tensor | list[torch.Tensor],
+        gmm1_permuted_weight_scale: torch.Tensor | list[torch.Tensor],
+        gmm2_weight: torch.Tensor | list[torch.Tensor] | None,
+        gmm2_weight_scale: torch.Tensor | list[torch.Tensor] | None,
         num_max_dispatch_tokens_per_rank: int,
         num_experts: int,
         quant_mode: int = 1,
@@ -896,21 +896,41 @@ class Buffer:
             ep_recv_count: `torch.Tensor`, a 1D tensor of type `torch.int32`
                 indicating the number of tokens received by each expert across all ranks.
         """
-        gmm1_permuted_weight_scale = gmm1_permuted_weight_scale.float()
-        gmm2_weight_scale = gmm2_weight_scale.float()
         topk_ids = topk_idx.int()
+        moe_mode = os.getenv("FUSED_DEEP_MOE_MODE")
+        if moe_mode == "1":
+            gmm1_permuted_weight_scale = gmm1_permuted_weight_scale.float()
+            gmm2_weight_scale = gmm2_weight_scale.float()
 
-        output, ep_recv_count = self.runtime.fused_deep_moe(
-            x,
-            topk_ids,
-            gmm1_permuted_weight,
-            gmm1_permuted_weight_scale,
-            gmm2_weight,
-            gmm2_weight_scale,
-            topk_weights,
-            num_max_dispatch_tokens_per_rank,
-            num_experts,
-            quant_mode,
-        )
-
-        return output, ep_recv_count
+            output, ep_recv_count = self.runtime.fused_deep_moe(
+                x,
+                topk_ids,
+                gmm1_permuted_weight,
+                gmm1_permuted_weight_scale,
+                gmm2_weight,
+                gmm2_weight_scale,
+                topk_weights,
+                num_max_dispatch_tokens_per_rank,
+                num_experts,
+                quant_mode,
+            )
+            return output, ep_recv_count
+        elif moe_mode == "2":
+            print(f"{self.rank=} enter fused_deep_moe...., {gmm1_permuted_weight[0].dtype=}", flush=True)
+            max_output_size = num_max_dispatch_tokens_per_rank
+            # return
+            output, ep_recv_count = self.runtime.dispatch_ffn_combine(
+                x,
+                topk_ids,
+                gmm1_permuted_weight,
+                gmm1_permuted_weight_scale,
+                gmm2_weight,
+                gmm2_weight_scale,
+                topk_weights,
+                max_output_size,
+                num_experts,
+                quant_mode,
+            )
+            return output, ep_recv_count
+        else:
+            raise NotImplementedError(f"Not support FUSED_DEEP_MOE_MODE:{moe_mode}")
