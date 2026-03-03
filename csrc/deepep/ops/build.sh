@@ -44,7 +44,7 @@ yes | cp "$HCCL_STRUCT_FILE_PATH" "$SCRIPTS_DIR/op_kernel/"
 # for dispatch_ffn_combine & dispatch_ffn_combine_bf16
 TARGET_DIR="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_kernel/utils/"
 TARGET_FILE="$TARGET_DIR/$(basename "$HCCL_STRUCT_FILE_PATH")"
-TARGET_DIR_BF16="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_bf16/utils/"
+TARGET_DIR_BF16="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_bf16_kernel/utils/"
 TARGET_FILE_BF16="$TARGET_DIR_BF16/$(basename "$HCCL_STRUCT_FILE_PATH")"
 echo "*************************************"
 echo $HCCL_STRUCT_FILE_PATH
