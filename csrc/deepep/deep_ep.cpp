@@ -1280,6 +1280,8 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
                     scale2_list,
                     expert_scales,
                     hcom_ep_name,
+                    num_ranks,
+                    rank,
                     max_output_size,
                     output,
                     expert_token_nums);
