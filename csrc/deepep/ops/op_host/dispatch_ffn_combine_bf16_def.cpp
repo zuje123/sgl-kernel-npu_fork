@@ -69,6 +69,8 @@ class DispatchFFNCombineBF16 : public OpDef {
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
 
     this->Attr("group").AttrType(REQUIRED).String();
+    this->Attr("ep_rank_size").Int();
+    this->Attr("ep_rank_id").Int();
     this->Attr("M").AttrType(OPTIONAL).Int();
     this->Attr("transB").AttrType(OPTIONAL).Bool(false);
     this->Attr("weightNz").AttrType(OPTIONAL).Bool(false);
