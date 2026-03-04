@@ -919,7 +919,7 @@ class Buffer:
             print(f"{self.rank=} enter fused_deep_moe...., {gmm1_permuted_weight[0].dtype=}", flush=True)
             max_output_size = num_max_dispatch_tokens_per_rank
             # return
-            output, ep_recv_count = self.runtime.dispatch_ffn_combine(
+            output, expert_token_nums = self.runtime.dispatch_ffn_combine(
                 x,
                 topk_ids,
                 gmm1_permuted_weight,
@@ -931,6 +931,6 @@ class Buffer:
                 num_experts,
                 quant_mode,
             )
-            return output, ep_recv_count
+            return output, expert_token_nums
         else:
             raise NotImplementedError(f"Not support FUSED_DEEP_MOE_MODE:{moe_mode}")

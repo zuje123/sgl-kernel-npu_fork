@@ -1261,8 +1261,10 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
 
     bool is_shared_expert = (rank < shared_expert_rank_num); // 不支持共享专家？
     int64_t num_local_experts = is_shared_expert ? 1 : num_experts / (num_ranks - shared_expert_rank_num);
-    at::Tensor ep_recv_count = at::empty({num_local_experts * num_ranks}, expert_ids.options());
-    std::cout << "[deepep] rank:" << rank  << ", ep_recv_count.size " << ep_recv_count.sizes() << ", weight1.size " << weight1.size() << std::endl;
+    at::Tensor expert_token_nums = at::empty({num_local_experts}, expert_ids.options());
+    std::cout << "[deepep] rank:" << rank  << ", expert_token_nums.size " << expert_token_nums.sizes() << std::endl;
+    std::cout << "[deepep] rank:" << rank  << ", weight1_list " << weight1_list.size() << std::endl;
+    std::cout << "[deepep] rank:" << rank  << ", scale1_list " << scale1_list.size() << std::endl;
 
     bool is_int8 = weight1[0].scalar_type() == at::ScalarType::Char;
     // /*
@@ -1280,7 +1282,7 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
                     hcom_ep_name,
                     max_output_size,
                     output,
-                    ep_recv_count);
+                    expert_token_nums);
     } else {
         std::cout << "[deepep222] rank:" << rank << ", is_int8 " << is_int8 << ", max_output_size " << max_output_size
             << ", out.sizes() " << output.sizes() << std::endl;
@@ -1295,10 +1297,10 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
                     hcom_ep_name,
                     max_output_size,
                     output,
-                    ep_recv_count);
+                    expert_token_nums);
     }
     // */
 
-    return {output, ep_recv_count};
+    return {output, expert_token_nums};
 }
 }  // namespace deep_ep
