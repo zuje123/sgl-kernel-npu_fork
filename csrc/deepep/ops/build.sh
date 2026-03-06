@@ -39,7 +39,7 @@ if [ -z "$HCCL_STRUCT_FILE_PATH" ]; then
     exit 1
 fi
 # for dispatch & combine..
-yes | cp "$HCCL_STRUCT_FILE_PATH" "$SCRIPTS_DIR/op_kernel/"
+yes | cp -v "$HCCL_STRUCT_FILE_PATH" "$SCRIPTS_DIR/op_kernel/"
 
 # for dispatch_ffn_combine & dispatch_ffn_combine_bf16
 TARGET_DIR="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_kernel/utils/"
@@ -49,8 +49,8 @@ TARGET_FILE_BF16="$TARGET_DIR_BF16/$(basename "$HCCL_STRUCT_FILE_PATH")"
 echo "*************************************"
 echo $HCCL_STRUCT_FILE_PATH
 echo "$TARGET_DIR"
-cp "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR"
-cp "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR_BF16"
+cp -v "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR"
+cp -v "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR_BF16"
 sed -i 's/struct HcclOpResParam {/struct HcclOpResParamCustom {/g' "$TARGET_FILE"
 sed -i 's/struct HcclRankRelationResV2 {/struct HcclRankRelationResV2Custom {/g' "$TARGET_FILE"
 sed -i 's/struct HcclOpResParam {/struct HcclOpResParamCustom {/g' "$TARGET_FILE_BF16"

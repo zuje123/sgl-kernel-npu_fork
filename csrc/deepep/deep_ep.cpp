@@ -1244,7 +1244,7 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
 
     at::TensorList weight1_list(weight1);
     at::TensorList scale1_list(scale1);
-    at::TensorList weight2_list(weight1);
+    at::TensorList weight2_list(weight2);
     at::TensorList scale2_list(scale2);
 
     char hcom_ep_name[128];
@@ -1259,7 +1259,7 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
     int bs = expert_ids.size(0);
     at::Tensor output = at::empty({bs, h}, x.options());
 
-    bool is_shared_expert = (rank < shared_expert_rank_num); // 不支持共享专家？
+    bool is_shared_expert = (rank < shared_expert_rank_num);
     int64_t num_local_experts = is_shared_expert ? 1 : num_experts / (num_ranks - shared_expert_rank_num);
     at::Tensor expert_token_nums = at::empty({num_local_experts}, expert_ids.options());
     std::cout << "[deepep] rank:" << rank  << ", expert_token_nums.size " << expert_token_nums.sizes() << std::endl;
@@ -1297,10 +1297,14 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
                     scale2_list,
                     expert_scales,
                     hcom_ep_name,
+                    num_ranks,
+                    rank,
                     max_output_size,
                     output,
                     expert_token_nums);
     }
+    // std::cout << "[deepep333] rank:" << rank << ", expert_token_nums " << expert_token_nums.cpu() << ", out.sizes() " << output.sizes() << std::endl;
+    // c10_npu::npuSynchronizeDevice();
     // */
 
     return {output, expert_token_nums};
