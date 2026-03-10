@@ -13,6 +13,6 @@ else()
 endif()
 message(WARNING "_DISPATCH_FFN_INC_OPTS: ${_DISPATCH_FFN_INC_OPTS}")
 
-add_ops_compile_options(ALL OPTIONS -DASCENDC_DUMP=1 --cce-auto-sync=off ${_DISPATCH_FFN_INC_OPTS}) #  --cce-auto-sync-log=${CMAKE_SOURCE_DIR}/sync.log
+add_ops_compile_options(ALL OPTIONS -DASCENDC_DUMP=0 --cce-auto-sync=off ${_DISPATCH_FFN_INC_OPTS})
 
 add_kernels_compile()
