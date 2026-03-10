@@ -28,13 +28,13 @@ class DispatchFFNCombine : public OpDef {
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .IgnoreContiguous();
+        .AutoContiguous();
     this->Input("w2")
         .ParamType(DYNAMIC)
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .IgnoreContiguous();
+        .AutoContiguous();
     this->Input("expertIdx")
         .ParamType(REQUIRED)
         .DataType({ge::DT_INT32, ge::DT_INT32, ge::DT_INT32})
