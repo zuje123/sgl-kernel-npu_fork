@@ -128,5 +128,12 @@ public:
                                            const at::Tensor &gmm2WeightScale, const at::Tensor &expertScalesOptional,
                                            int64_t num_max_dispatch_tokens_per_rank, int64_t num_experts,
                                            int quant_mode);
+
+    std::vector<at::Tensor> dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expertIds,
+                                           const std::vector<at::Tensor>& weight1, const std::vector<at::Tensor>& scale1,
+                                           const std::vector<at::Tensor>& weight2, const std::vector<at::Tensor>& scale2,
+                                           const at::Tensor &expertScales,
+                                           int64_t max_output_size, int64_t num_experts, int quant_mode) const;
+
 };
 }  // namespace deep_ep

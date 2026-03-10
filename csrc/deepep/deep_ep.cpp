@@ -1005,4 +1005,57 @@ std::vector<at::Tensor> Buffer::fused_deep_moe(const at::Tensor &x, const at::Te
 
     return {output, ep_recv_count};
 }
+
+std::vector<at::Tensor>
+Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, const std::vector<at::Tensor> &weight1,
+                             const std::vector<at::Tensor> &scale1, const std::vector<at::Tensor> &weight2,
+                             const std::vector<at::Tensor> &scale2, const at::Tensor &expert_scales,
+                             int64_t max_output_size, int64_t num_experts, int quant_mode) const
+{
+    EP_HOST_ASSERT(expert_ids.dim() == 2);
+    EP_HOST_ASSERT(expert_scales.dim() == 2);
+    EP_HOST_ASSERT(weight1.size() > 0);
+    EP_HOST_ASSERT(weight2.size() > 0);
+    EP_HOST_ASSERT(max_output_size > 0);
+
+    at::TensorList weight1_list(weight1);
+    at::TensorList scale1_list(scale1);
+    at::TensorList weight2_list(weight2);
+    at::TensorList scale2_list(scale2);
+
+    char hcom_ep_name[128];
+    if (!moe_all_to_all_group_name.empty()) {
+        std::memcpy(hcom_ep_name, moe_all_to_all_group_name.data(), moe_all_to_all_group_name.size() + 1);
+    } else {
+        HCCL_CHECK(HcclGetCommName(ep_comm, hcom_ep_name));
+    }
+
+    int h = x.size(1);
+    int bs = expert_ids.size(0);
+    at::Tensor output = at::empty({bs, h}, x.options());
+
+    int64_t num_local_experts = num_experts / num_ranks;
+    at::Tensor expert_token_nums = at::empty({num_local_experts}, expert_ids.options());
+
+    bool is_int8 = weight1[0].scalar_type() == at::ScalarType::Char;
+    if (is_int8) {
+        EXEC_NPU_CMD(aclnnDispatchFFNCombine,
+                    x,
+                    weight1_list,
+                    weight2_list,
+                    expert_ids,
+                    scale1_list,
+                    scale2_list,
+                    expert_scales,
+                    hcom_ep_name,
+                    num_ranks,
+                    rank,
+                    max_output_size,
+                    output,
+                    expert_token_nums);
+    } else {
+        // TODO: aclnnDispatchFFNCombineBF16
+    }
+    return {output, expert_token_nums};
+}
 }  // namespace deep_ep
