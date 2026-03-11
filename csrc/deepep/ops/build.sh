@@ -18,12 +18,12 @@ echo "using ASCEND_HOME_PATH: $ASCEND_HOME_PATH"
 script_path=$(realpath $(dirname $0))
 
 # 创建third_party目录（如果不存在）
-mkdir -p "${SCRIPTS_DIR}/third_party"
-CATLASS_DIR="${SCRIPTS_DIR}/third_party/catlass"
+mkdir -p "${script_path}/third_party"
+CATLASS_DIR="${script_path}/third_party/catlass"
 
 # ASCEND910C (A3) series
 # dependency: catlass
-git config --global --add safe.directory "$SCRIPTS_DIR"
+git config --global --add safe.directory "$script_path"
 CATLASS_PATH=${CATLASS_DIR}/include
 if [[ ! -d "${CATLASS_PATH}" ]]; then
     echo "dependency catlass is missing, try to fetch it..."
@@ -39,12 +39,12 @@ if [ -z "$HCCL_STRUCT_FILE_PATH" ]; then
     exit 1
 fi
 # for dispatch & combine..
-yes | cp -v "$HCCL_STRUCT_FILE_PATH" "$SCRIPTS_DIR/op_kernel/"
+cp -vf "$HCCL_STRUCT_FILE_PATH" "$script_path/op_kernel/"
 
 # for dispatch_ffn_combine & dispatch_ffn_combine_bf16
-TARGET_DIR="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_kernel/utils/"
+TARGET_DIR="$script_path/op_kernel/dispatch_ffn_combine_kernel/utils/"
 TARGET_FILE="$TARGET_DIR/$(basename "$HCCL_STRUCT_FILE_PATH")"
-# TARGET_DIR_BF16="$SCRIPTS_DIR/op_kernel/dispatch_ffn_combine_bf16_kernel/utils/"
+# TARGET_DIR_BF16="$script_path/op_kernel/dispatch_ffn_combine_bf16_kernel/utils/"
 # TARGET_FILE_BF16="$TARGET_DIR_BF16/$(basename "$HCCL_STRUCT_FILE_PATH")"
 echo "*************************************"
 echo $HCCL_STRUCT_FILE_PATH

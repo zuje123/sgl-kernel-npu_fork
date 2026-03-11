@@ -110,8 +110,8 @@ static ge::graphStatus DispatchFFNCombineCheckAttrAndSetTiling(gert::TilingConte
     info.isWeightNz = *weight_nz;
 
     uint32_t epRankSize = static_cast<uint32_t>(*epRankSizePtr);
+    OP_TILING_CHECK(*epRankIdPtr < 0, OP_LOGE(K_INNER_DEBUG, "epRankId must >= 0."), return ge::GRAPH_FAILED);
     uint32_t epRankId = static_cast<uint32_t>(*epRankIdPtr);
-    OP_TILING_CHECK(epRankId < 0, OP_LOGE(K_INNER_DEBUG, "epRankId must >= 0."), return ge::GRAPH_FAILED);
     OP_TILING_CHECK(epRankId >= epRankSize, OP_LOGE(K_INNER_DEBUG, "epRankId must < epRankSize."),
                     return ge::GRAPH_FAILED);
 
