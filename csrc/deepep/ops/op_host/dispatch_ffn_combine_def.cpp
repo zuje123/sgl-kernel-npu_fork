@@ -27,14 +27,12 @@ class DispatchFFNCombine : public OpDef {
         .ParamType(REQUIRED)
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .AutoContiguous(); // aclTensor类型
+        .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ});
     this->Input("w2")
         .ParamType(REQUIRED)
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .AutoContiguous(); // aclTensorL类型
+        .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ});
     this->Input("expertIdx")
         .ParamType(REQUIRED)
         .DataType({ge::DT_INT32, ge::DT_INT32, ge::DT_INT32})
