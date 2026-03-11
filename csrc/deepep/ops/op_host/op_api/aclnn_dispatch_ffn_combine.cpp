@@ -30,36 +30,34 @@ enum NnopbaseHcclServerType {
     NNOPBASE_HCCL_SERVER_TYPE_END
 };
 
-extern aclnnStatus aclnnInnerDispatchFFNCombineGetWorkspaceSize(const aclTensor* x, const aclTensor* weight1, const aclTensor* weight2,
-                                                         const aclTensor* expertId, const aclTensor* scale1, const aclTensor* scale2,
-                                                         const aclTensor* probs,
-                                                         const char* group, int64_t epRankSize, int64_t epRankId, int64_t maxOutputSize,
-                                                         bool transB, bool weightNz,
-                                                         const aclTensor* out, const aclTensor* expertTokenNums,
-                                                         uint64_t* workspaceSize, aclOpExecutor** executor);
-extern aclnnStatus aclnnInnerDispatchFFNCombine(void *workspace, uint64_t workspaceSize,
-                                            aclOpExecutor *executor, aclrtStream stream);
+extern aclnnStatus aclnnInnerDispatchFFNCombineGetWorkspaceSize(
+    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertId,
+    const aclTensor *scale1, const aclTensor *scale2, const aclTensor *probs, const char *group, int64_t epRankSize,
+    int64_t epRankId, int64_t maxOutputSize, bool transB, bool weightNz, const aclTensor *out,
+    const aclTensor *expertTokenNums, uint64_t *workspaceSize, aclOpExecutor **executor);
+extern aclnnStatus aclnnInnerDispatchFFNCombine(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor,
+                                                aclrtStream stream);
 extern "C" void __attribute__((weak)) NnopbaseSetHcclServerType(void *executor, NnopbaseHcclServerType sType);
 
-
-
-aclnnStatus aclnnDispatchFFNCombineGetWorkspaceSize(const aclTensor* x, const aclTensor* weight1, const aclTensor* weight2,
-                                                    const aclTensor* expertId, const aclTensor* scale1, const aclTensor* scale2,
-                                                    const aclTensor* probs,
-                                                    const char* group, int64_t epRankSize, int64_t epRankId, int64_t maxOutputSize,
-                                                    const aclTensor* out, const aclTensor* expertTokenNums,
-                                                    uint64_t* workspaceSize, aclOpExecutor** executor)
+aclnnStatus aclnnDispatchFFNCombineGetWorkspaceSize(const aclTensor *x, const aclTensor *weight1,
+                                                    const aclTensor *weight2, const aclTensor *expertId,
+                                                    const aclTensor *scale1, const aclTensor *scale2,
+                                                    const aclTensor *probs, const char *group, int64_t epRankSize,
+                                                    int64_t epRankId, int64_t maxOutputSize, const aclTensor *out,
+                                                    const aclTensor *expertTokenNums, uint64_t *workspaceSize,
+                                                    aclOpExecutor **executor)
 {
     bool transB = false;
     bool weightNz = true;
 
-    aclnnStatus ret = aclnnInnerDispatchFFNCombineGetWorkspaceSize(x, weight1, weight2, expertId, scale1, scale2, probs, group, 
-                                                                    epRankSize, epRankId, maxOutputSize, transB, weightNz,
-                                                                    out, expertTokenNums, workspaceSize, executor);
+    aclnnStatus ret = aclnnInnerDispatchFFNCombineGetWorkspaceSize(
+        x, weight1, weight2, expertId, scale1, scale2, probs, group, epRankSize, epRankId, maxOutputSize, transB,
+        weightNz, out, expertTokenNums, workspaceSize, executor);
     return ret;
 }
 
-aclnnStatus aclnnDispatchFFNCombine(void* workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)
+aclnnStatus aclnnDispatchFFNCombine(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor,
+                                    aclrtStream stream)
 {
     if (NnopbaseSetHcclServerType) {
         NnopbaseSetHcclServerType(executor, NNOPBASE_HCCL_SERVER_TYPE_MTE);

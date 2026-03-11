@@ -23,7 +23,8 @@ extern "C" {
 
 /**
  * Operator function: fuse all distributed MoE ops from InitRouting through Unpermute.
- * @brief First-stage interface of aclnnDispatchFFNCombine that calculates workspace size based on the specific compute flow.
+ * @brief First-stage interface of aclnnDispatchFFNCombine that calculates workspace size based on the specific compute
+ * flow.
  * @domain aclnn_ops_infer
  * @param [in] x: The input tensor.
  * @param [in] weight1: The first weight tensor.
@@ -41,14 +42,15 @@ extern "C" {
  */
 __attribute__((visibility("default"))) aclnnStatus aclnnDispatchFFNCombineGetWorkspaceSize(
     const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertId,
-    const aclTensor *scale1, const aclTensor *scale2, const aclTensor *probs, const char *group,
-    int64_t epRankSize, int64_t epRankId, int64_t maxOutputSize, const aclTensor *out, const aclTensor *expertTokenNums,
+    const aclTensor *scale1, const aclTensor *scale2, const aclTensor *probs, const char *group, int64_t epRankSize,
+    int64_t epRankId, int64_t maxOutputSize, const aclTensor *out, const aclTensor *expertTokenNums,
     uint64_t *workspaceSize, aclOpExecutor **executor);
 
 /**
  * @brief Second-stage interface of aclnnDispatchFFNCombine to execute computation.
  * @param [in] workspace: workspace memory address allocated on the NPU device side.
- * @param [in] workspace_size: workspace size allocated on the NPU device side, obtained from aclnnDispatchFFNCombineGetWorkspaceSize.
+ * @param [in] workspace_size: workspace size allocated on the NPU device side, obtained from
+ * aclnnDispatchFFNCombineGetWorkspaceSize.
  * @param [in] executor: op executor containing the operator compute flow.
  * @param [in] stream: acl stream.
  * @return aclnnStatus: status code.

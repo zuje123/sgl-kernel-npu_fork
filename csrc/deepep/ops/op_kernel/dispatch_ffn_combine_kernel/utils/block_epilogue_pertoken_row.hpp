@@ -23,20 +23,10 @@
 namespace Catlass::Epilogue::Block {
 
 // float scale, dequant per expert
-template <
-    uint32_t UB_STAGES_,
-    class CType_,
-    class LayoutPerTokenScale_,
-    class DType_,
-    class TileCopy_
->
-class BlockEpilogue <
-    EpilogueAtlasA2PerTokenDequant<UB_STAGES_>,
-    CType_,
-    Gemm::GemmType<float, LayoutPerTokenScale_>,
-    DType_,
-    TileCopy_
-> {
+template <uint32_t UB_STAGES_, class CType_, class LayoutPerTokenScale_, class DType_, class TileCopy_>
+class BlockEpilogue<EpilogueAtlasA2PerTokenDequant<UB_STAGES_>, CType_, Gemm::GemmType<float, LayoutPerTokenScale_>,
+                    DType_, TileCopy_>
+{
 public:
     using DispatchPolicy = EpilogueAtlasA2PerTokenDequant<UB_STAGES_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
@@ -51,16 +41,13 @@ public:
     using LayoutD = typename DType_::Layout;
 
     // Check data infos
-    static_assert(
-        std::is_same_v<ElementC, half> && (std::is_same_v<ElementD, half> || std::is_same_v<ElementD, bfloat16_t>),
-        "The element type template parameters of BlockEpilogue are wrong"
-    );
-    static_assert(
-        std::is_same_v<LayoutC, layout::RowMajor> && 
-            std::is_same_v<LayoutPerTokenScale, layout::VectorLayout> && std::is_same_v<LayoutD, layout::RowMajor>,
-        "The layout template parameters of BlockEpilogue are wrong"
-    );
-
+    static_assert(std::is_same_v<ElementC, half> &&
+                      (std::is_same_v<ElementD, half> || std::is_same_v<ElementD, bfloat16_t>),
+                  "The element type template parameters of BlockEpilogue are wrong");
+    static_assert(std::is_same_v<LayoutC, layout::RowMajor> &&
+                      std::is_same_v<LayoutPerTokenScale, layout::VectorLayout> &&
+                      std::is_same_v<LayoutD, layout::RowMajor>,
+                  "The layout template parameters of BlockEpilogue are wrong");
 
     // Tile copy
     using CopyGmToUbC = typename TileCopy_::CopyGmToUbC;
@@ -76,7 +63,9 @@ public:
         Params() {};
 
         CATLASS_DEVICE
-        Params(int32_t EP_, int32_t expertPerRank_, __gm__ int32_t *ptrTokenPerExpert_, int32_t n2_) : ptrTokenPerExpert(ptrTokenPerExpert_), EP(EP_), expertPerRank(expertPerRank_), n2(n2_) {}
+        Params(int32_t EP_, int32_t expertPerRank_, __gm__ int32_t *ptrTokenPerExpert_, int32_t n2_)
+            : ptrTokenPerExpert(ptrTokenPerExpert_), EP(EP_), expertPerRank(expertPerRank_), n2(n2_)
+        {}
     };
 
     CATLASS_DEVICE
@@ -114,10 +103,7 @@ public:
         }
     }
     CATLASS_DEVICE
-    ~BlockEpilogue()
-    {
-        
-    }
+    ~BlockEpilogue() {}
 
     CATLASS_DEVICE
     void UpdateParams(Params const &params_)
@@ -126,19 +112,16 @@ public:
     }
 
     CATLASS_DEVICE
-    void operator() (
-        AscendC::GlobalTensor<ElementC> const &gmC,
-        MatrixCoord const &shapeC,
-        AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale,
-        AscendC::GlobalTensor<ElementD> const &gmD
-    )
+    void operator()(AscendC::GlobalTensor<ElementC> const &gmC, MatrixCoord const &shapeC,
+                    AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale,
+                    AscendC::GlobalTensor<ElementD> const &gmD)
     {
         uint32_t blockM = shapeC.row();
         uint32_t blockN = shapeC.column();
 
         uint32_t tileLoops = blockM;
 
-        for (uint32_t loopIdx = 0; loopIdx < tileLoops; loopIdx ++) {
+        for (uint32_t loopIdx = 0; loopIdx < tileLoops; loopIdx++) {
             auto gmTileC = gmC[loopIdx * blockN];
             auto &ubC = ubCList[ubListId];
             auto &ubCFp32 = ubCFp32List[ubListId];
@@ -173,7 +156,7 @@ public:
 
             AscendC::Cast(ubD, ubCFp32, AscendC::RoundMode::CAST_RINT, blockN);
             AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(eventUbDVMTE3List[ubListId]);
-            
+
             AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(eventUbDVMTE3List[ubListId]);
             copyUbToGmD(gmTileD, ubD, layoutUbD, layoutUbD);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(eventUbDMTE3VList[ubListId]);
@@ -197,7 +180,6 @@ private:
 
     AscendC::LocalTensor<float> ubCFp32List[UB_STAGES];
     AscendC::LocalTensor<float> ubMulList[UB_STAGES];
-
 
     CopyGmToUbC copyGmToUbC;
     CopyUbToGmD copyUbToGmD;

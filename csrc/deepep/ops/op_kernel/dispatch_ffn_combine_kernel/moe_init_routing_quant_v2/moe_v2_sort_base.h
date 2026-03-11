@@ -20,49 +20,51 @@
 namespace MoeInitRoutingQuantV2 {
 using namespace AscendC;
 using namespace optiling;
-class MoeV2SortBase {
- public:
-  __aicore__ inline MoeV2SortBase(){};
+class MoeV2SortBase
+{
+public:
+    __aicore__ inline MoeV2SortBase(){};
 
- protected:
-  __aicore__ inline void SyncAll();
+protected:
+    __aicore__ inline void SyncAll();
 
- protected:
-  TPipe* pipe;
-  TQue<QuePosition::VECIN, 1> sortDataCopyInQueue;
-  TQue<QuePosition::VECOUT, 1> sortDataCopyOutQueue;
-  TBuf<TPosition::VECCALC> tempBuffer;
-  TBuf<TPosition::VECCALC> sortedBuffer;
+protected:
+    TPipe *pipe;
+    TQue<QuePosition::VECIN, 1> sortDataCopyInQueue;
+    TQue<QuePosition::VECOUT, 1> sortDataCopyOutQueue;
+    TBuf<TPosition::VECCALC> tempBuffer;
+    TBuf<TPosition::VECCALC> sortedBuffer;
 
-  GlobalTensor<int32_t> expertIdxGm;
-  GlobalTensor<int32_t> sortedexpertIdxGm;
-  GlobalTensor<int32_t> expandDstToSrcRowGm;
-  GlobalTensor<int32_t> expertTokensCountOrCumsumGm;
-  GlobalTensor<int32_t> expertTokensBeforeCapacityGm;
+    GlobalTensor<int32_t> expertIdxGm;
+    GlobalTensor<int32_t> sortedexpertIdxGm;
+    GlobalTensor<int32_t> expandDstToSrcRowGm;
+    GlobalTensor<int32_t> expertTokensCountOrCumsumGm;
+    GlobalTensor<int32_t> expertTokensBeforeCapacityGm;
 
-  int64_t tileLength;
-  int64_t bufferNum = 1;
-  int64_t totalLength;
-  int64_t coreNum;
-  int64_t n;
-  int64_t k;
-  int64_t existRowIdx;
-  int64_t expertNum;
-  int64_t expertTokensCountOrCumsumFlag = 0;
-  int64_t expertTokensBeforeCapacityFlag = 0;
+    int64_t tileLength;
+    int64_t bufferNum = 1;
+    int64_t totalLength;
+    int64_t coreNum;
+    int64_t n;
+    int64_t k;
+    int64_t existRowIdx;
+    int64_t expertNum;
+    int64_t expertTokensCountOrCumsumFlag = 0;
+    int64_t expertTokensBeforeCapacityFlag = 0;
 
-  static constexpr int64_t SYNC_GM_NUM = 2;
-  static constexpr int64_t WORK_GM_NUM = 2;
-  static constexpr int64_t DST_BLK_STRIDE = 1;
-  static constexpr int64_t DST_REP_STRIDE = 8;
+    static constexpr int64_t SYNC_GM_NUM = 2;
+    static constexpr int64_t WORK_GM_NUM = 2;
+    static constexpr int64_t DST_BLK_STRIDE = 1;
+    static constexpr int64_t DST_REP_STRIDE = 8;
 };
 
-__aicore__ inline void MoeV2SortBase::SyncAll() {
-  if (coreNum == 1) {
-    return;
-  }
+__aicore__ inline void MoeV2SortBase::SyncAll()
+{
+    if (coreNum == 1) {
+        return;
+    }
 #ifndef __CCE_KT_TEST__
-  AscendC::SyncAll();
+    AscendC::SyncAll();
 #endif
 }
 
