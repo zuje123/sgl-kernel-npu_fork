@@ -22,7 +22,7 @@ CATLASS_DIR="${script_path}/third_party/catlass"
 
 # ASCEND910C (A3) series
 # dependency: catlass
-git config --global --add safe.directory "$script_path"
+git config --add safe.directory "$script_path"
 CATLASS_PATH=${CATLASS_DIR}/include
 if [[ ! -d "${CATLASS_PATH}" ]]; then
     echo "dependency catlass is missing, try to fetch it..."
