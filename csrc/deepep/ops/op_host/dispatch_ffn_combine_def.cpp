@@ -24,29 +24,29 @@ class DispatchFFNCombine : public OpDef {
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
     this->Input("w1")
-        .ParamType(DYNAMIC)
+        .ParamType(REQUIRED)
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .AutoContiguous();
+        .AutoContiguous(); // aclTensor类型
     this->Input("w2")
-        .ParamType(DYNAMIC)
+        .ParamType(REQUIRED)
         .DataType({ge::DT_INT8, ge::DT_INT8, ge::DT_INT8})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_FRACTAL_NZ})
-        .AutoContiguous();
+        .AutoContiguous(); // aclTensorL类型
     this->Input("expertIdx")
         .ParamType(REQUIRED)
         .DataType({ge::DT_INT32, ge::DT_INT32, ge::DT_INT32})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
     this->Input("scale1")
-        .ParamType(DYNAMIC)
+        .ParamType(REQUIRED)
         .DataType({ge::DT_INT64, ge::DT_INT64, ge::DT_INT64})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
     this->Input("scale2")
-        .ParamType(DYNAMIC)
+        .ParamType(REQUIRED)
         .DataType({ge::DT_INT64, ge::DT_INT64, ge::DT_INT64})
         .Format({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND})
         .UnknownShapeFormat({ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND});
