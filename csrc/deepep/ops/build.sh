@@ -17,7 +17,6 @@ fi
 echo "using ASCEND_HOME_PATH: $ASCEND_HOME_PATH"
 script_path=$(realpath $(dirname $0))
 
-# 创建third_party目录（如果不存在）
 mkdir -p "${script_path}/third_party"
 CATLASS_DIR="${script_path}/third_party/catlass"
 
