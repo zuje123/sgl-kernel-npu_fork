@@ -882,7 +882,7 @@ class Buffer:
             gmm2_weight_scale: quantization scale tensor corresponding to `gmm2Weight`.
 
             num_max_dispatch_tokens_per_rank: the maximum number of tokens to dispatch, when fuse_mode is 2, it's indicates
-                the maximum number of tokens reveived in dispatch. All the ranks must hold the same value.
+                the maximum number of tokens received in dispatch. All the ranks must hold the same value.
             num_experts: the number of experts.
             quant_mode: int type, optional number, displays the quantization model. Supported values: 1 means int8 (default)
             fuse_mode: int type, optional number, indicates the operator fusion mode. Supported values: 1(default) and 2.
