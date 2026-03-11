@@ -16,10 +16,10 @@ struct MoeTokenUnpermuteTilingData {
     int64_t buffer_num;
 };
 
-__forceinline__ [host, aicore] void
-MoeTokenUnpermuteTiling(int32_t m, int32_t n, int32_t topK, MoeTokenUnpermuteTilingData &tilingData, uint32_t coreNum)
+__forceinline__[host, aicore] void MoeTokenUnpermuteTiling(int32_t m, int32_t n, int32_t topK,
+                                                           MoeTokenUnpermuteTilingData &tilingData, uint32_t coreNum)
 {
-    #define I64(x) static_cast<int64_t>(x)
+#define I64(x) static_cast<int64_t>(x)
     tilingData.hidden_size = I64(n);
     tilingData.top_k = I64(topK);
     tilingData.num_out_tokens = I64(m);

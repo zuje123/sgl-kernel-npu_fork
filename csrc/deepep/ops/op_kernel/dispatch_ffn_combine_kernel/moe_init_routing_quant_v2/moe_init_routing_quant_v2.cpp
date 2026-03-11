@@ -30,104 +30,109 @@ using namespace MoeInitRoutingQuantV2;
 using namespace optiling;
 
 template <class DTYPE_X = bfloat16_t>
-__aicore__ inline  void moe_init_routing_quant_v2(
-    GM_ADDR x, GM_ADDR expertIdx, GM_ADDR scale, GM_ADDR offset, GM_ADDR expandedX, GM_ADDR expandedRowIdx,
-    GM_ADDR expertTokensCountOrCumsum, GM_ADDR expertTokensBeforeCapacity, GM_ADDR dynamicQuantScale, GM_ADDR workspace,
-    const MoeInitRoutingQuantV2TilingData* tilingData, uint64_t tilingKey) {
-
-  if (g_coreType == AIC) {
-    return;
-  }
-
-  if (workspace == nullptr) {
-    return;
-  }
-
-  if (tilingKey == 20000) {  // quant full load
-    TPipe sortPipe;
-    MoeV2FullLoadQuant<DTYPE_X> op;
-    op.Init(x, expertIdx, scale, offset, expandedX, expandedRowIdx, expertTokensCountOrCumsum, workspace, tilingData, &sortPipe);
-    op.Process();
-    sortPipe.Destroy();
-    return;
-  } 
-  
-  
-  else if (tilingKey == 21000) {  // dynamic quant full load
-    TPipe sortPipe;
-    MoeV2FullLoadDynamicQuant<DTYPE_X> op;
-    op.Init(x, expertIdx, expandedX, expandedRowIdx, expertTokensCountOrCumsum, scale, dynamicQuantScale, workspace, tilingData,
-            &sortPipe);
-    op.Process();
-    sortPipe.Destroy();
-    return;
-  }
-
-  // sort
-  if (tilingKey == 10000 || tilingKey == 10100 || tilingKey == 11000 || tilingKey == 11100) {
-    TPipe sortPipe;
-    MoeV2SortOneCore op;
-    op.Init<MoeInitRoutingQuantV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, workspace,
-                                             tilingData, &sortPipe);
-    op.Process();
-    sortPipe.Destroy();
-  } else if (tilingKey == 10010 || tilingKey == 10110 || tilingKey == 11010  || tilingKey== 11110) {
-    TPipe sortPipe;
-    MoeV2SortMultiCore op;
-    op.Init<MoeInitRoutingQuantV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, workspace,
-                                             tilingData, &sortPipe);
-    op.Process();
-    sortPipe.Destroy();
-  }
-
-  if (tilingKey == 10000 || tilingKey == 10010 || tilingKey ==11000 || tilingKey ==11010) { // No drop scenario
-    if (tilingData->expertTokensCountOrCumsumFlag != EXERPT_TOKENS_NONE) {
-      TPipe expertTokenOutPipe;
-      MoeV2ExpertTokenOut expertTokenOutOp;
-      expertTokenOutOp.Init<MoeInitRoutingQuantV2TilingData>(expertTokensCountOrCumsum, expertTokensBeforeCapacity,
-                                                             expandedRowIdx, workspace, tilingData, &expertTokenOutPipe);
-      expertTokenOutOp.Process();
-      expertTokenOutPipe.Destroy();
+__aicore__ inline void moe_init_routing_quant_v2(GM_ADDR x, GM_ADDR expertIdx, GM_ADDR scale, GM_ADDR offset,
+                                                 GM_ADDR expandedX, GM_ADDR expandedRowIdx,
+                                                 GM_ADDR expertTokensCountOrCumsum, GM_ADDR expertTokensBeforeCapacity,
+                                                 GM_ADDR dynamicQuantScale, GM_ADDR workspace,
+                                                 const MoeInitRoutingQuantV2TilingData *tilingData, uint64_t tilingKey)
+{
+    if (g_coreType == AIC) {
+        return;
     }
-    TPipe srcToDstPipe;
-    MoeV2SrcToDstOp srcToDstOp;
-    srcToDstOp.Init<MoeInitRoutingQuantV2TilingData>(expandedRowIdx, workspace, tilingData, &srcToDstPipe);
-    srcToDstOp.Process();
-    srcToDstPipe.Destroy();
-  } else if (tilingKey ==10100 || tilingKey ==10110 || tilingKey ==11100 || tilingKey ==11110) { // Drop scenario
-    TPipe expertTokenOutPipe;
-    MoeV2ExpertTokenOut expertTokenOutOp;
-    expertTokenOutOp.Init<MoeInitRoutingQuantV2TilingData>(expertTokensCountOrCumsum, expertTokensBeforeCapacity,
-                                                           expandedRowIdx, workspace, tilingData, &expertTokenOutPipe);
-    expertTokenOutOp.Process();
-    expertTokenOutPipe.Destroy();
 
-    if (tilingKey == 10100 || tilingKey == 10110) {
-      TPipe srcToDstPipe;
-      MoeV2SrcToDstWithCapacity<int8_t, MoeInitRoutingQuantV2TilingData> srcToDstWithCapacityOp;
-      srcToDstWithCapacityOp.Init(expandedRowIdx, expandedX, workspace, tilingData, &srcToDstPipe);
-      srcToDstWithCapacityOp.Process();
-      srcToDstPipe.Destroy();
-    } else {
-      TPipe srcToDstGatherPipe;
-      MoeV2SrcToDstAndGather<DTYPE_X, MoeInitRoutingQuantV2TilingData> srcToDstAndGatherOp;
-      srcToDstAndGatherOp.Init(x, scale, expandedRowIdx, expandedX, dynamicQuantScale, workspace, tilingData, &srcToDstGatherPipe);
-      srcToDstAndGatherOp.Process();
-      srcToDstGatherPipe.Destroy();
+    if (workspace == nullptr) {
+        return;
     }
-  }
 
-  if (tilingKey == 10000 || tilingKey == 10010 || tilingKey == 10100 || tilingKey == 10110) {
-    TPipe gatherPipe;
-    MoeV2GatherQuant<DTYPE_X> gatherQuantOp;
-    gatherQuantOp.Init(x, scale, offset, expandedRowIdx, expandedX, workspace, tilingData, &gatherPipe);
-    gatherQuantOp.Process();
-    gatherPipe.Destroy();
-  } else if (tilingKey  == 11000 || tilingKey == 11010) {
-    TPipe gatherPipe;
-    MoeV2GatherDynamicQuant<DTYPE_X> gatherDynamicQuantOp;
-    gatherDynamicQuantOp.Init(x, scale, expandedRowIdx, expandedX, dynamicQuantScale, workspace, tilingData, &gatherPipe);
-    gatherDynamicQuantOp.Process();
-    gatherPipe.Destroy();
-  }
+    if (tilingKey == 20000) {  // quant full load
+        TPipe sortPipe;
+        MoeV2FullLoadQuant<DTYPE_X> op;
+        op.Init(x, expertIdx, scale, offset, expandedX, expandedRowIdx, expertTokensCountOrCumsum, workspace,
+                tilingData, &sortPipe);
+        op.Process();
+        sortPipe.Destroy();
+        return;
+    }
+
+    else if (tilingKey == 21000) {  // dynamic quant full load
+        TPipe sortPipe;
+        MoeV2FullLoadDynamicQuant<DTYPE_X> op;
+        op.Init(x, expertIdx, expandedX, expandedRowIdx, expertTokensCountOrCumsum, scale, dynamicQuantScale, workspace,
+                tilingData, &sortPipe);
+        op.Process();
+        sortPipe.Destroy();
+        return;
+    }
+
+    // sort
+    if (tilingKey == 10000 || tilingKey == 10100 || tilingKey == 11000 || tilingKey == 11100) {
+        TPipe sortPipe;
+        MoeV2SortOneCore op;
+        op.Init<MoeInitRoutingQuantV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity,
+                                                 workspace, tilingData, &sortPipe);
+        op.Process();
+        sortPipe.Destroy();
+    } else if (tilingKey == 10010 || tilingKey == 10110 || tilingKey == 11010 || tilingKey == 11110) {
+        TPipe sortPipe;
+        MoeV2SortMultiCore op;
+        op.Init<MoeInitRoutingQuantV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity,
+                                                 workspace, tilingData, &sortPipe);
+        op.Process();
+        sortPipe.Destroy();
+    }
+
+    if (tilingKey == 10000 || tilingKey == 10010 || tilingKey == 11000 || tilingKey == 11010) {  // No drop scenario
+        if (tilingData->expertTokensCountOrCumsumFlag != EXERPT_TOKENS_NONE) {
+            TPipe expertTokenOutPipe;
+            MoeV2ExpertTokenOut expertTokenOutOp;
+            expertTokenOutOp.Init<MoeInitRoutingQuantV2TilingData>(expertTokensCountOrCumsum,
+                                                                   expertTokensBeforeCapacity, expandedRowIdx,
+                                                                   workspace, tilingData, &expertTokenOutPipe);
+            expertTokenOutOp.Process();
+            expertTokenOutPipe.Destroy();
+        }
+        TPipe srcToDstPipe;
+        MoeV2SrcToDstOp srcToDstOp;
+        srcToDstOp.Init<MoeInitRoutingQuantV2TilingData>(expandedRowIdx, workspace, tilingData, &srcToDstPipe);
+        srcToDstOp.Process();
+        srcToDstPipe.Destroy();
+    } else if (tilingKey == 10100 || tilingKey == 10110 || tilingKey == 11100 || tilingKey == 11110) {  // Drop scenario
+        TPipe expertTokenOutPipe;
+        MoeV2ExpertTokenOut expertTokenOutOp;
+        expertTokenOutOp.Init<MoeInitRoutingQuantV2TilingData>(expertTokensCountOrCumsum, expertTokensBeforeCapacity,
+                                                               expandedRowIdx, workspace, tilingData,
+                                                               &expertTokenOutPipe);
+        expertTokenOutOp.Process();
+        expertTokenOutPipe.Destroy();
+
+        if (tilingKey == 10100 || tilingKey == 10110) {
+            TPipe srcToDstPipe;
+            MoeV2SrcToDstWithCapacity<int8_t, MoeInitRoutingQuantV2TilingData> srcToDstWithCapacityOp;
+            srcToDstWithCapacityOp.Init(expandedRowIdx, expandedX, workspace, tilingData, &srcToDstPipe);
+            srcToDstWithCapacityOp.Process();
+            srcToDstPipe.Destroy();
+        } else {
+            TPipe srcToDstGatherPipe;
+            MoeV2SrcToDstAndGather<DTYPE_X, MoeInitRoutingQuantV2TilingData> srcToDstAndGatherOp;
+            srcToDstAndGatherOp.Init(x, scale, expandedRowIdx, expandedX, dynamicQuantScale, workspace, tilingData,
+                                     &srcToDstGatherPipe);
+            srcToDstAndGatherOp.Process();
+            srcToDstGatherPipe.Destroy();
+        }
+    }
+
+    if (tilingKey == 10000 || tilingKey == 10010 || tilingKey == 10100 || tilingKey == 10110) {
+        TPipe gatherPipe;
+        MoeV2GatherQuant<DTYPE_X> gatherQuantOp;
+        gatherQuantOp.Init(x, scale, offset, expandedRowIdx, expandedX, workspace, tilingData, &gatherPipe);
+        gatherQuantOp.Process();
+        gatherPipe.Destroy();
+    } else if (tilingKey == 11000 || tilingKey == 11010) {
+        TPipe gatherPipe;
+        MoeV2GatherDynamicQuant<DTYPE_X> gatherDynamicQuantOp;
+        gatherDynamicQuantOp.Init(x, scale, expandedRowIdx, expandedX, dynamicQuantScale, workspace, tilingData,
+                                  &gatherPipe);
+        gatherDynamicQuantOp.Process();
+        gatherPipe.Destroy();
+    }
 }
