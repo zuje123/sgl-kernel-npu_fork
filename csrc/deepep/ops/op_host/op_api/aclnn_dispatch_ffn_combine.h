@@ -40,8 +40,8 @@ extern "C" {
  * @return aclnnStatus: status code.
  */
 __attribute__((visibility("default"))) aclnnStatus aclnnDispatchFFNCombineGetWorkspaceSize(
-    const aclTensor *x, const aclTensorList *weight1, const aclTensorList *weight2, const aclTensor *expertId,
-    const aclTensorList *scale1, const aclTensorList *scale2, const aclTensor *probs, const char *group,
+    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertId,
+    const aclTensor *scale1, const aclTensor *scale2, const aclTensor *probs, const char *group,
     int64_t epRankSize, int64_t epRankId, int64_t maxOutputSize, const aclTensor *out, const aclTensor *expertTokenNums,
     uint64_t *workspaceSize, aclOpExecutor **executor);
 

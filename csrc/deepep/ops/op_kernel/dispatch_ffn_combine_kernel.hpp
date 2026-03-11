@@ -100,13 +100,13 @@ public:
         __gm__ ElementA *ptrA;
         LayoutA layoutA;
         LayoutA layoutA2;
-        GM_ADDR ptrB1;
+        __gm__ ElementB *ptrB1;
         LayoutB layoutB1;
-        GM_ADDR ptrB2;
+        __gm__ ElementB *ptrB2;
         LayoutB layoutB2;
-        GM_ADDR ptrScale1;
+        __gm__ ElementScale *ptrScale1;
         LayoutScale layoutScale1;
-        GM_ADDR ptrScale2;
+        __gm__ ElementScale *ptrScale2;
         LayoutScale layoutScale2;
         __gm__ ElementD2 *ptrOutput;
         LayoutD1 layoutD1;
@@ -165,10 +165,10 @@ public:
             initRoutingQuantTilingKey(initRoutingQuantTilingKey_),
             epilogueCoreNum(epilogueCoreNum_), epilogueGranularity(epilogueGranularity_),
             ptrA(reinterpret_cast<__gm__ ElementA *>(ptrA_)), layoutA(layoutA_), layoutA2(layoutA2_),
-            ptrB1(ptrB1_), layoutB1(layoutB1_),
-            ptrB2(ptrB2_), layoutB2(layoutB2_),
-            ptrScale1(ptrScale1_), layoutScale1(layoutScale1_),
-            ptrScale2(ptrScale2_), layoutScale2(layoutScale2_),
+            ptrB1(reinterpret_cast<__gm__ ElementB *>(ptrB1_)), layoutB1(layoutB1_),
+            ptrB2(reinterpret_cast<__gm__ ElementB *>(ptrB2_)), layoutB2(layoutB2_),
+            ptrScale1(reinterpret_cast<__gm__ ElementScale *>(ptrScale1_)), layoutScale1(layoutScale1_),
+            ptrScale2(reinterpret_cast<__gm__ ElementScale *>(ptrScale2_)), layoutScale2(layoutScale2_),
             ptrOutput(reinterpret_cast<__gm__ ElementD2 *>(ptrOutput_)), layoutD1(layoutD1_), layoutD2(layoutD2_),
             expertIdx(expertIdx_), moeInitRoutingQuantV2Scale(moeInitRoutingQuantV2Scale_),
             moeInitRoutingQuantV2Offset(moeInitRoutingQuantV2Offset_), 
@@ -403,8 +403,8 @@ private:
             AscendC::GlobalTensor<ElementB> gmB1;
             AscendC::GlobalTensor<ElementScale> gmS;
             int32_t arrayGroupIdx = params.listLen == 1 ? 0 : groupIdx;
-            gmB1.SetGlobalBuffer(reinterpret_cast<__gm__ ElementB *>(GetTensorAddr<int8_t>(arrayGroupIdx, params.ptrB1)));
-            gmS.SetGlobalBuffer(reinterpret_cast<__gm__ ElementScale *>(GetTensorAddr<int64_t>(arrayGroupIdx, params.ptrScale1)));
+            gmB1.SetGlobalBuffer(params.ptrB1);
+            gmS.SetGlobalBuffer(params.ptrScale1);
             AscendC::PipeBarrier<PIPE_ALL>();
             if (currentM <= L1TileShape::M) {
                 gmB1.SetL2CacheHint(AscendC::CacheMode::CACHE_MODE_DISABLE);
@@ -436,7 +436,7 @@ private:
                 int64_t gmOffsetA = layoutA.GetOffset(offsetA);
                 int64_t gmOffsetB = layoutB1.GetOffset(offsetB);
                 int64_t gmOffsetC = layoutC.GetOffset(offsetC);
-                int64_t gmOffsetS = blockCoord.n() * L1TileShape::N + (params.listLen == 1 ? groupIdx * params.problemShape.n() : 0);
+                int64_t gmOffsetS = groupIdx * params.problemShape.n() + blockCoord.n() * L1TileShape::N;   // One scale group per expert
                 if (currentM > 0) {
                     blockMmad(
                         gmA[gmGroupOffsetA + gmOffsetA], layoutA,
@@ -515,8 +515,8 @@ private:
             AscendC::GlobalTensor<ElementB> gmB2;
             AscendC::GlobalTensor<ElementScale> gmS2;
             int32_t arrayGroupIdx = params.listLen == 1 ? 0 : groupIdx;
-            gmB2.SetGlobalBuffer(reinterpret_cast<__gm__ ElementB *>(GetTensorAddr<int8_t>(arrayGroupIdx, params.ptrB2)));
-            gmS2.SetGlobalBuffer(reinterpret_cast<__gm__ ElementScale *>(GetTensorAddr<int64_t>(arrayGroupIdx, params.ptrScale2)));
+            gmB2.SetGlobalBuffer(params.ptrB2);
+            gmS2.SetGlobalBuffer(params.ptrScale2);
             if (currentM <= L1TileShape::M) {
                 gmB2.SetL2CacheHint(AscendC::CacheMode::CACHE_MODE_DISABLE);
             }

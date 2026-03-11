@@ -130,27 +130,16 @@ static ge::graphStatus DispatchFFNCombineCheckShapeAndSetTiling(gert::TilingCont
     const char *nodeName = context->GetNodeName();
 
     const gert::StorageShape *aStorageShape = context->GetInputShape(X_INDEX);
-    auto expertIdxTensor = context->GetDynamicInputTensor(EXPERTID_INDEX, 0);
+    auto expertIdxTensor = context->GetInputShape(EXPERTID_INDEX);
     uint32_t M = aStorageShape->GetStorageShape().GetDim(0);
     uint32_t K = aStorageShape->GetStorageShape().GetDim(1);
 
-    auto wTensor = context->GetDynamicInputTensor(WEIGHT_INDEX, 0);
-    uint32_t wTensorDims = wTensor->GetOriginShape().GetDimNum();
-    uint32_t N = wTensor->GetStorageShape().GetDim(wTensorDims - 1);
+    auto wTensor = context->GetInputShape(WEIGHT_INDEX);
+    uint32_t expertPerRank = wTensor->GetStorageShape().GetDim(0);
+    uint32_t N = wTensor->GetStorageShape().GetDim(2);
 
     uint32_t topK = expertIdxTensor->GetStorageShape().GetDim(1);
-    uint32_t listLen = 0;
-    while (true) {
-        auto wTensorT = context->GetDynamicInputTensor(WEIGHT_INDEX, ++listLen);
-        if (wTensorT == nullptr) {break;}
-    }
-
-    uint32_t expertPerRank;
-    if (listLen == 1) {
-        expertPerRank = wTensor->GetStorageShape().GetDim(0);
-    } else {
-        expertPerRank = listLen;
-    }
+    uint32_t listLen = 1; // 重要，传一个大tensor时使用
 
     info.M = M;
     info.N = N;
