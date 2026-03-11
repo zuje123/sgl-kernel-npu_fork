@@ -44,27 +44,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
         .def("low_latency_dispatch", &deep_ep::Buffer::low_latency_dispatch)
         .def("low_latency_combine", &deep_ep::Buffer::low_latency_combine)
         .def("fused_deep_moe", &deep_ep::Buffer::fused_deep_moe)
-        .def("dispatch_ffn_combine",
-            [](const deep_ep::Buffer& self, const at::Tensor &x, const at::Tensor &expertIds, const py::list &weight1_list,
-               const py::list &scale1_list, const py::list &weight2_list, const py::list &scale2_list,
-               const at::Tensor &expertScales, int64_t max_output_size, int64_t num_experts,
-               int quant_mode) -> py::list {
-                auto weight1 = py::cast<std::vector<at::Tensor>>(weight1_list);
-                auto scale1 = py::cast<std::vector<at::Tensor>>(scale1_list);
-                auto weight2 = py::cast<std::vector<at::Tensor>>(weight2_list);
-                auto scale2 = py::cast<std::vector<at::Tensor>>(scale2_list);
-
-                std::vector<at::Tensor> result = self.dispatch_ffn_combine(
-                    x, expertIds, weight1, scale1, weight2, scale2, expertScales,
-                    max_output_size, num_experts, quant_mode);
-
-                py::list py_result;
-                for (const auto& tensor : result) {
-                    py_result.append(tensor);
-                }
-                return py_result;
-            },
-            py::arg("x"), py::arg("expert_ids"), py::arg("weight1") = py::list(), py::arg("scale1") = py::list(),
-            py::arg("weight2") = py::list(), py::arg("scale2") = py::list(), py::arg("expert_scales"),
-            py::arg("max_output_size"), py::arg("num_experts"), py::arg("quant_mode") = 0);
+        .def("dispatch_ffn_combine", &deep_ep::Buffer::dispatch_ffn_combine);
 }

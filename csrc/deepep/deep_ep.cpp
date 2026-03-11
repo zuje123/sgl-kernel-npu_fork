@@ -1007,21 +1007,14 @@ std::vector<at::Tensor> Buffer::fused_deep_moe(const at::Tensor &x, const at::Te
 }
 
 std::vector<at::Tensor>
-Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, const std::vector<at::Tensor> &weight1,
-                             const std::vector<at::Tensor> &scale1, const std::vector<at::Tensor> &weight2,
-                             const std::vector<at::Tensor> &scale2, const at::Tensor &expert_scales,
+Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, const at::Tensor &weight1,
+                             const at::Tensor &scale1, const at::Tensor &weight2,
+                             const at::Tensor &scale2, const at::Tensor &expert_scales,
                              int64_t max_output_size, int64_t num_experts, int quant_mode) const
 {
     EP_HOST_ASSERT(expert_ids.dim() == 2);
     EP_HOST_ASSERT(expert_scales.dim() == 2);
-    EP_HOST_ASSERT(weight1.size() > 0);
-    EP_HOST_ASSERT(weight2.size() > 0);
     EP_HOST_ASSERT(max_output_size > 0);
-
-    at::TensorList weight1_list(weight1);
-    at::TensorList scale1_list(scale1);
-    at::TensorList weight2_list(weight2);
-    at::TensorList scale2_list(scale2);
 
     char hcom_ep_name[128];
     if (!moe_all_to_all_group_name.empty()) {
@@ -1037,15 +1030,15 @@ Buffer::dispatch_ffn_combine(const at::Tensor &x, const at::Tensor &expert_ids, 
     int64_t num_local_experts = num_experts / num_ranks;
     at::Tensor expert_token_nums = at::empty({num_local_experts}, expert_ids.options());
 
-    bool is_int8 = weight1[0].scalar_type() == at::ScalarType::Char;
+    bool is_int8 = weight1.scalar_type() == at::ScalarType::Char;
     if (is_int8) {
         EXEC_NPU_CMD(aclnnDispatchFFNCombine,
                     x,
-                    weight1_list,
-                    weight2_list,
+                    weight1,
+                    weight2,
                     expert_ids,
-                    scale1_list,
-                    scale2_list,
+                    scale1,
+                    scale2,
                     expert_scales,
                     hcom_ep_name,
                     num_ranks,
