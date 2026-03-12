@@ -81,8 +81,8 @@ static ge::graphStatus DispatchFFNCombineBF16CheckAttrAndSetTiling(gert::TilingC
     info.isWeightNz = *weight_nz;
 
     uint32_t epRankSize = static_cast<uint32_t>(*epRankSizePtr);
+    OP_TILING_CHECK(*epRankIdPtr < 0, OP_LOGE(K_INNER_DEBUG, "epRankId must >= 0."), return ge::GRAPH_FAILED);
     uint32_t epRankId = static_cast<uint32_t>(*epRankIdPtr);
-    OP_TILING_CHECK(epRankId < 0, OP_LOGE(K_INNER_DEBUG, "epRankId must >= 0."), return ge::GRAPH_FAILED);
     OP_TILING_CHECK(epRankId >= epRankSize, OP_LOGE(K_INNER_DEBUG, "epRankId must < epRankSize."), return ge::GRAPH_FAILED);
 
     // (void)ge::HcomTopoInfo::Instance().GetGroupRankSize(groupPtr, rankSize);
@@ -99,27 +99,28 @@ static ge::graphStatus DispatchFFNCombineBF16CheckShapeAndSetTiling(gert::Tiling
     const char *nodeName = context->GetNodeName();
 
     const gert::StorageShape *aStorageShape = context->GetInputShape(X_INDEX);
-    auto expertIdxTensor = context->GetDynamicInputTensor(EXPERTID_INDEX, 0);
+    auto expertIdxTensor = context->GetInputShape(EXPERTID_INDEX);
     uint32_t M = aStorageShape->GetStorageShape().GetDim(0);
     uint32_t K = aStorageShape->GetStorageShape().GetDim(1);
 
-    auto wTensor = context->GetDynamicInputTensor(WEIGHT_INDEX, 0);
+    auto wTensor = context->GetInputShape(WEIGHT_INDEX);
     uint32_t wTensorDims = wTensor->GetOriginShape().GetDimNum();
-    uint32_t N = wTensor->GetStorageShape().GetDim(wTensorDims - 1);
+    uint32_t expertPerRank = wTensor->GetStorageShape().GetDim(0);
+    uint32_t N = wTensor->GetStorageShape().GetDim(2);
 
     uint32_t topK = expertIdxTensor->GetStorageShape().GetDim(1);
-    uint32_t listLen = 0;
-    while (true) {
-        auto wTensorT = context->GetDynamicInputTensor(WEIGHT_INDEX, ++listLen);
-        if (wTensorT == nullptr) {break;}
-    }
+    uint32_t listLen = 1; // 重要，传一个大tensor时使用
+    // while (true) {
+    //     auto wTensorT = context->GetDynamicInputTensor(WEIGHT_INDEX, ++listLen);
+    //     if (wTensorT == nullptr) {break;}
+    // }
 
-    uint32_t expertPerRank;
-    if (listLen == 1) {
-        expertPerRank = wTensor->GetStorageShape().GetDim(0);
-    } else {
-        expertPerRank = listLen;
-    }
+    // uint32_t expertPerRank;
+    // if (listLen == 1) {
+    //     expertPerRank = wTensor->GetStorageShape().GetDim(0);
+    // } else {
+    //     expertPerRank = listLen;
+    // }
 
     info.M = M;
     info.N = N;
