@@ -457,6 +457,8 @@ CATLASS_DEVICE
                 AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID0);
             }
 
+            SetFlag<HardEvent::V_S>(EVENT_ID0);
+            WaitFlag<HardEvent::V_S>(EVENT_ID0);
             int32_t prevSum = 0;
             for (int32_t i = 0; i < params.rank * params.expertPerRank; i++) {
                 prevSum += tmpBuffer(i);

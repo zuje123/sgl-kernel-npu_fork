@@ -213,7 +213,8 @@ __aicore__ inline void KernelMoeTokenUnpermute<T1, T2, T3, PROBS>::CalMultiOutTo
     }
     this->indicesLocal = this->indices_inque.template DeQue<T2>();
 
-    
+    SetFlag<HardEvent::MTE2_S>(EVENT_ID0);
+    WaitFlag<HardEvent::MTE2_S>(EVENT_ID0);
     for (int64_t out_token_idx = 0; out_token_idx < out_tokens_number; ++out_token_idx) {
         CalSingleOutToken(out_token_idx * this->top_k, out_offset + out_token_idx);
     }

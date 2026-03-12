@@ -15,7 +15,7 @@
 #include "register/tilingdata_base.h"
 #include "tiling/tiling_api.h"
 #include "error_log.h"
-#include "hcom_topo_info.h"
+// #include "hcom_topo_info.h"
 #include "register/op_def_registry.h"
 #include "../op_kernel/dispatch_ffn_combine_bf16_tiling.h"
 #include <vector>
@@ -29,9 +29,11 @@ using namespace ge;
 namespace {
     const char *K_INNER_DEBUG = "DispatchFFNCombineBF16 Tiling Debug";
     constexpr uint32_t ATTR_GROUP_INDEX = 0;
-    constexpr uint32_t ATTR_MAX_OUTPUT_SIZE_INDEX = 1;
-    constexpr uint32_t ATTR_IS_TRANS_B = 2;
-    constexpr uint32_t ATTR_WEIGHT_NZ = 3;
+    constexpr uint32_t ATTR_EP_RANK_SIZE_INDEX = 1;
+    constexpr uint32_t ATTR_EP_RANK_ID_INDEX = 2;
+    constexpr uint32_t ATTR_MAX_OUTPUT_SIZE_INDEX = 3;
+    constexpr uint32_t ATTR_IS_TRANS_B = 4;
+    constexpr uint32_t ATTR_WEIGHT_NZ = 5;
     constexpr uint64_t INIT_TILINGKEY = 1000000;
     constexpr uint64_t TILINGKEY_TRANS_B = 1U;
     constexpr uint64_t TILINGKEY_WEIGHT_NZ = 10;
@@ -59,11 +61,15 @@ static ge::graphStatus DispatchFFNCombineBF16CheckAttrAndSetTiling(gert::TilingC
     OP_TILING_CHECK(attrs == nullptr, OP_LOGE(K_INNER_DEBUG, "attrs is null."), return ge::GRAPH_FAILED);
 
     auto groupPtr = attrs->GetAttrPointer<char>(static_cast<int>(ATTR_GROUP_INDEX));
+    auto epRankSizePtr = attrs->GetAttrPointer<int>(ATTR_EP_RANK_SIZE_INDEX);
+    auto epRankIdPtr = attrs->GetAttrPointer<int>(ATTR_EP_RANK_ID_INDEX);
     auto maxOutputSizePtr = attrs->GetAttrPointer<int>(ATTR_MAX_OUTPUT_SIZE_INDEX);
     auto is_trans_b = attrs->GetAttrPointer<bool>(ATTR_IS_TRANS_B);
     auto weight_nz = attrs->GetAttrPointer<bool>(ATTR_WEIGHT_NZ);
     OP_TILING_CHECK(groupPtr == nullptr || strlen(groupPtr) == 0,
     OP_LOGE(K_INNER_DEBUG, "group is invalid."), return GRAPH_FAILED);
+    OP_TILING_CHECK(epRankSizePtr == nullptr, OP_LOGE(K_INNER_DEBUG, "epRankSizePtr is invalid."), return GRAPH_FAILED);
+    OP_TILING_CHECK(epRankIdPtr == nullptr, OP_LOGE(K_INNER_DEBUG, "epRankIdPtr is invalid."), return GRAPH_FAILED);
 
     OP_TILING_CHECK(is_trans_b == nullptr,
         OP_LOGE(K_INNER_DEBUG, "is_trans_b is invalid."), return GRAPH_FAILED);
@@ -74,9 +80,13 @@ static ge::graphStatus DispatchFFNCombineBF16CheckAttrAndSetTiling(gert::TilingC
     info.isTransposeB = *is_trans_b;
     info.isWeightNz = *weight_nz;
 
-    int64_t rankSize;
-    (void)ge::HcomTopoInfo::Instance().GetGroupRankSize(groupPtr, rankSize);
-    info.worldSize = rankSize;
+    uint32_t epRankSize = static_cast<uint32_t>(*epRankSizePtr);
+    uint32_t epRankId = static_cast<uint32_t>(*epRankIdPtr);
+    OP_TILING_CHECK(epRankId < 0, OP_LOGE(K_INNER_DEBUG, "epRankId must >= 0."), return ge::GRAPH_FAILED);
+    OP_TILING_CHECK(epRankId >= epRankSize, OP_LOGE(K_INNER_DEBUG, "epRankId must < epRankSize."), return ge::GRAPH_FAILED);
+
+    // (void)ge::HcomTopoInfo::Instance().GetGroupRankSize(groupPtr, rankSize);
+    info.worldSize = epRankSize;
 
     OP_LOGD(K_INNER_DEBUG, "maxOutputSize=%d ", info.maxOutputSize);
     OP_LOGD(K_INNER_DEBUG, "rankSize=%d ", info.worldSize);
