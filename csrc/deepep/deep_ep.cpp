@@ -1035,8 +1035,8 @@ std::vector<at::Tensor> Buffer::dispatch_ffn_combine(const at::Tensor &x, const 
         EXEC_NPU_CMD(aclnnDispatchFFNCombine, x, weight1, weight2, expert_ids, scale1, scale2, expert_scales,
                      hcom_ep_name, num_ranks, rank, max_output_size, output, expert_token_nums);
     } else {
-        // TODO: aclnnDispatchFFNCombineBF16
-        assert(false && "dispatch_ffn_combine for BF16 is not implemented yet.");
+        // TODO: Implement aclnnDispatchFFNCombineBF16 when available
+        EP_HOST_ASSERT_S(false, "BF16 mode not yet supported for dispatch_ffn_combine");
     }
     return {output, expert_token_nums};
 }

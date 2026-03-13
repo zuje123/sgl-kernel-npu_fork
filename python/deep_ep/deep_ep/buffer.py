@@ -9,6 +9,10 @@ from deep_ep_cpp import Config, EventHandle
 
 from .utils import EventOverlap, log_parameters
 
+from enum import IntEnum
+class FuseMode(IntEnum):
+    FUSED_DEEP_MOE = 1
+    DISPATCH_FFN_COMBINE = 2
 
 class Buffer:
 
@@ -861,7 +865,7 @@ class Buffer:
         num_max_dispatch_tokens_per_rank: int,
         num_experts: int,
         quant_mode: int = 1,
-        fuse_mode: int = 1,
+        fuse_mode: FuseMode = FuseMode.FUSED_DEEP_MOE,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         A fused low-latency implementation for MoE expert forward and combination.
@@ -881,11 +885,11 @@ class Buffer:
             gmm2_weight: weight tensor for the second stage (e.g., projection or FFN output).
             gmm2_weight_scale: quantization scale tensor corresponding to `gmm2Weight`.
 
-            num_max_dispatch_tokens_per_rank: the maximum number of tokens to dispatch, when fuse_mode is 2, it's indicates
-                the maximum number of tokens received in dispatch. All the ranks must hold the same value.
+            num_max_dispatch_tokens_per_rank: the maximum number of tokens to dispatch, when fuse_mode is DISPATCH_FFN_COMBINE,
+                it indicates the maximum number of tokens received in dispatch. All the ranks must hold the same value.
             num_experts: the number of experts.
             quant_mode: int type, optional number, displays the quantization model. Supported values: 1 means int8 (default)
-            fuse_mode: int type, optional number, indicates the operator fusion mode. Supported values: 1(default) and 2.
+            fuse_mode: Fuse mode enum (default: FuseMode.FUSED_DEEP_MOE).
 
         Notes:
             - The first dimension of `topk_idx` defines the batch size `bs`.
@@ -900,7 +904,7 @@ class Buffer:
                 indicating the number of tokens received by each expert across all ranks.
         """
         topk_ids = topk_idx.int()
-        if fuse_mode == 1:
+        if fuse_mode == FuseMode.FUSED_DEEP_MOE:
             gmm1_permuted_weight_scale = gmm1_permuted_weight_scale.float()
             gmm2_weight_scale = gmm2_weight_scale.float()
 
@@ -917,8 +921,8 @@ class Buffer:
                 quant_mode,
             )
             return output, ep_recv_count
-        elif fuse_mode == 2:
-            # The maximum number of tokens that rank can obtain during dispatch. (max_bs * ranks * 2)
+        elif fuse_mode == FuseMode.DISPATCH_FFN_COMBINE:
+            # The maximum number of tokens that rank can obtain during dispatch. (max_bs * ranks * topk)
             max_output_size = num_max_dispatch_tokens_per_rank
             output, expert_token_nums = self.runtime.dispatch_ffn_combine(
                 x,
