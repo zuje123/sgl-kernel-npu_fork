@@ -1,4 +1,5 @@
 import os
+from enum import IntEnum
 from typing import Callable, List, Optional, Tuple, Union
 
 import deep_ep_cpp
@@ -9,10 +10,11 @@ from deep_ep_cpp import Config, EventHandle
 
 from .utils import EventOverlap, log_parameters
 
-from enum import IntEnum
+
 class FuseMode(IntEnum):
     FUSED_DEEP_MOE = 1
     DISPATCH_FFN_COMBINE = 2
+
 
 class Buffer:
 
