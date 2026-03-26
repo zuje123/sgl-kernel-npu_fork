@@ -64,8 +64,13 @@ namespace Catlass::Gemm::Kernel {
 constexpr uint16_t SYNCFLAGC2V = 9;
 constexpr uint16_t SYNCFLAGV2C = 10;
 
-template <class BlockMmad_, class BlockScheduler_, class ElementGroupList_, class BlockEpilogue1_,
-          class BlockEpilogue2_>
+template <
+    class BlockMmad_,
+    class BlockScheduler_,
+    class ElementGroupList_,
+    class BlockEpilogue1_,
+    class BlockEpilogue2_
+>
 class DispatchFFNCombineKernel
 {
 public:
@@ -388,7 +393,6 @@ private:
         AscendC::CrossCoreWaitFlag<0x2>(syncgmmIdx /
                                         CROSS_CORE_FLAG_MAX_SET_COUNT);  // Wait for AIV to finish cumsum for matmul
         syncgmmIdx++;
-        AscendC::PipeBarrier<PIPE_ALL>();
 
         for (uint32_t groupIdx = 0; groupIdx < params.expertPerRank; ++groupIdx) {
             uint32_t currentM = cumsumMM((params.EP - 1) * params.expertPerRank + groupIdx);
@@ -402,7 +406,6 @@ private:
             int32_t arrayGroupIdx = params.listLen == 1 ? 0 : groupIdx;
             gmB1.SetGlobalBuffer(params.ptrB1);
             gmS.SetGlobalBuffer(params.ptrScale1);
-            AscendC::PipeBarrier<PIPE_ALL>();
             if (currentM <= L1TileShape::M) {
                 gmB1.SetL2CacheHint(AscendC::CacheMode::CACHE_MODE_DISABLE);
             }
@@ -487,8 +490,6 @@ private:
 
         uint32_t startCoreIdx = 0;
 
-        AscendC::PipeBarrier<PIPE_ALL>();
-
         int64_t preCurrentmSum = 0;
         int32_t syncLoopIdx = -1;
         uint32_t lastDequantExpertNum = params.expertPerRank;
@@ -496,8 +497,6 @@ private:
         if (params.epilogueGranularity < params.expertPerRank) {
             lastDequantExpertNum = params.expertPerRank - params.epilogueGranularity;
         }
-
-        AscendC::PipeBarrier<PIPE_ALL>();
 
         for (uint32_t groupIdx = 0; groupIdx < params.expertPerRank; ++groupIdx) {
             uint32_t currentM = cumsumMM((params.EP - 1) * params.expertPerRank + groupIdx);

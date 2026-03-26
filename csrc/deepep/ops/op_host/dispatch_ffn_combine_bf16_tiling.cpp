@@ -22,9 +22,12 @@
 #include <map>
 #include <algorithm>
 #include "../op_kernel/dispatch_ffn_combine_bf16_kernel/moe_init_routing_v2/moe_init_routing_v2_tiling.h"
+#include "mc2_tiling_utils.h"
 
 using namespace AscendC;
 using namespace ge;
+
+#define HCCL_BUFFSIZE  "HCCL_BUFFSIZE"
 
 namespace {
     const char *K_INNER_DEBUG = "DispatchFFNCombineBF16 Tiling Debug";
@@ -43,6 +46,7 @@ namespace {
     constexpr uint32_t EXPERTID_INDEX = 3;
     constexpr uint32_t BLOCK_NUM = 20;
     constexpr uint32_t SYSTEM_NEED_WORKSPACE = 16 * 1024 * 1024;
+    constexpr uint64_t MB_SIZE = 1024 * 1024UL;
 }
 
 namespace optiling {
@@ -110,17 +114,6 @@ static ge::graphStatus DispatchFFNCombineBF16CheckShapeAndSetTiling(gert::Tiling
 
     uint32_t topK = expertIdxTensor->GetStorageShape().GetDim(1);
     uint32_t listLen = 1; // 重要，传一个大tensor时使用
-    // while (true) {
-    //     auto wTensorT = context->GetDynamicInputTensor(WEIGHT_INDEX, ++listLen);
-    //     if (wTensorT == nullptr) {break;}
-    // }
-
-    // uint32_t expertPerRank;
-    // if (listLen == 1) {
-    //     expertPerRank = wTensor->GetStorageShape().GetDim(0);
-    // } else {
-    //     expertPerRank = listLen;
-    // }
 
     info.M = M;
     info.N = N;
@@ -128,10 +121,10 @@ static ge::graphStatus DispatchFFNCombineBF16CheckShapeAndSetTiling(gert::Tiling
     info.expertPerRank = expertPerRank;
     info.topK = topK;
     info.listLen = listLen;
-    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);
-    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);
-    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);
-    OP_LOGD(K_INNER_DEBUG, "expertPerRank=%d ", info.expertPerRank);
+    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);  // num_tokens
+    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);  // hidden
+    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);  // moe_intermediate_size
+    OP_LOGD(K_INNER_DEBUG, "expertPerRank=%d ", info.expertPerRank);  // num_local_experts
     OP_LOGD(K_INNER_DEBUG, "topK=%d ", info.topK);
     OP_LOGD(K_INNER_DEBUG, "listLen=%d ", info.listLen);
 
@@ -236,6 +229,14 @@ static ge::graphStatus DispatchFFNCombineBF16TilingFuncImpl(gert::TilingContext 
     // OP_LOGE(initRoutingTilingKey, " initRoutingTilingKey.");
     OP_LOGD(K_INNER_DEBUG, "tilingKey=%ld", initRoutingQuantTilingKey);
 
+    uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
+    uint64_t actualSize = static_cast<uint64_t>(info.M) * info.topK * info.K * sizeof(int16_t) * 3 + 10 * MB_SIZE ;
+    OP_TILING_CHECK((actualSize > maxWindowSize),
+        OP_LOGE(nodeName, "HCCL_BUFFSIZE is too SMALL, m = %lu, k = %lu, topK = %lu"
+            " expected HCCL_BUFFSIZE is ((m * k * topK * sizeof(int16_t)) * 3 + 10MB)= %luMB, HCCL_BUFFSIZE=%luMB.",
+            info.M, info.K, info.topK, (actualSize + MB_SIZE - 1) / MB_SIZE, maxWindowSize / MB_SIZE),
+        return ge::GRAPH_FAILED);
+
     // 4. workspace
     size_t *workSpaces = context->GetWorkspaceSizes(1);
     OP_TILING_CHECK(workSpaces == nullptr, OP_LOGE(nodeName, "workSpaces is nullptr."),
@@ -251,7 +252,8 @@ static ge::graphStatus DispatchFFNCombineBF16TilingFuncImpl(gert::TilingContext 
                             info.maxOutputSize * n2 * sizeof(int16_t) +
                             info.maxOutputSize * info.K * sizeof(int16_t) +
                             info.maxOutputSize * k2 * sizeof(int16_t) +
-                            info.worldSize * sizeof(int32_t) * 16;
+                            info.worldSize * sizeof(int32_t) * 16 +
+                            (info.expertPerRank + info.worldSize) * sizeof(int32_t) * 16;
                             // std::max(info.maxOutputSize * info.N * sizeof(int16_t), info.maxOutputSize * n2 * sizeof(int16_t)) +
                             // std::max(info.maxOutputSize * info.K * sizeof(int8_t), info.maxOutputSize * k2 * sizeof(int8_t));
 

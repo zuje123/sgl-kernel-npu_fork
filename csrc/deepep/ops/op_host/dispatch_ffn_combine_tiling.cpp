@@ -148,10 +148,10 @@ static ge::graphStatus DispatchFFNCombineCheckShapeAndSetTiling(gert::TilingCont
     info.expertPerRank = expertPerRank;
     info.topK = topK;
     info.listLen = listLen;
-    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);
-    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);
-    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);
-    OP_LOGD(K_INNER_DEBUG, "expertPerRank=%d ", info.expertPerRank);
+    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);  // num_tokens
+    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);  // hidden
+    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);  // moe_intermediate_size
+    OP_LOGD(K_INNER_DEBUG, "expertPerRank=%d ", info.expertPerRank);  // num_local_experts
     OP_LOGD(K_INNER_DEBUG, "topK=%d ", info.topK);
     OP_LOGD(K_INNER_DEBUG, "listLen=%d ", info.listLen);
 
@@ -273,7 +273,7 @@ static ge::graphStatus DispatchFFNCombineTilingFuncImpl(gert::TilingContext *con
         (actualSize > maxWindowSize),
         OP_LOGE(nodeName,
                 "HCCL_BUFFSIZE is too SMALL, m = %lu, k = %lu, topK = %lu"
-                " expected HCCL_BUFFSIZE is ((m * k * topK * sizeof(int8_t)) * 3 + 3MB)= %luMB, HCCL_BUFFSIZE=%luMB.",
+                " expected HCCL_BUFFSIZE is ((m * k * topK * sizeof(int8_t)) * 3 + 10MB)= %luMB, HCCL_BUFFSIZE=%luMB.",
                 info.M, info.K, info.topK, (actualSize + MB_SIZE - 1) / MB_SIZE, maxWindowSize / MB_SIZE),
         return ge::GRAPH_FAILED);
 
