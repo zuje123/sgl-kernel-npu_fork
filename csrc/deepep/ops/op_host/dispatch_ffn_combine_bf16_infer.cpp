@@ -24,17 +24,19 @@ const size_t ATTR_GROUP = 0;
 const size_t ATTR_RANK_SIZE = 1;
 const size_t SUPPORT_DIM_SIZE = 2;
 
-static ge::graphStatus InferShapeDispatchFFNCombineBF16(gert::InferShapeContext* context) {
-  return ge::GRAPH_SUCCESS;
+static ge::graphStatus InferShapeDispatchFFNCombineBF16(gert::InferShapeContext *context)
+{
+    return ge::GRAPH_SUCCESS;
 }
 
-static ge::graphStatus InferDataTypeDispatchFFNCombineBF16(gert::InferDataTypeContext* context) {
-  // auto d_type = context->GetInputDataType(0);
-  // context->SetOutputDataType(0, d_type);
-  return ge::GRAPH_SUCCESS;
+static ge::graphStatus InferDataTypeDispatchFFNCombineBF16(gert::InferDataTypeContext *context)
+{
+    // auto d_type = context->GetInputDataType(0);
+    // context->SetOutputDataType(0, d_type);
+    return ge::GRAPH_SUCCESS;
 }
 
 IMPL_OP_INFERSHAPE(DispatchFFNCombineBF16)
-  .InferShape(InferShapeDispatchFFNCombineBF16)
-  .InferDataType(InferDataTypeDispatchFFNCombineBF16);
+    .InferShape(InferShapeDispatchFFNCombineBF16)
+    .InferDataType(InferDataTypeDispatchFFNCombineBF16);
 }  // namespace ops

@@ -4,7 +4,8 @@
  * This file is a part of the CANN Open Software.
  * Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
  * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
@@ -12,7 +13,6 @@
  * \file moe_init_routing_v2.cpp
  * \brief
  */
-
 
 #ifdef __DAV_C310__
 #include "arch35/moe_v2_mrgsort_out.h"
@@ -41,12 +41,11 @@ using namespace MoeInitRoutingV2;
 using namespace optiling;
 
 template <class DTYPE_X = bfloat16_t>
-__aicore__ inline  void moe_init_routing_v2(GM_ADDR x, GM_ADDR expertIdx, GM_ADDR expandedX,
-                                                          GM_ADDR expandedRowIdx, GM_ADDR expertTokensCountOrCumsum,
-                                                          GM_ADDR expertTokensBeforeCapacity, GM_ADDR workspace,
-                                                          const MoeInitRoutingV2TilingData* tilingData, uint64_t tilingKey)
+__aicore__ inline void moe_init_routing_v2(GM_ADDR x, GM_ADDR expertIdx, GM_ADDR expandedX, GM_ADDR expandedRowIdx,
+                                           GM_ADDR expertTokensCountOrCumsum, GM_ADDR expertTokensBeforeCapacity,
+                                           GM_ADDR workspace, const MoeInitRoutingV2TilingData *tilingData,
+                                           uint64_t tilingKey)
 {
-
     if (g_coreType == AIC) {
         return;
     }
@@ -74,15 +73,15 @@ __aicore__ inline  void moe_init_routing_v2(GM_ADDR x, GM_ADDR expertIdx, GM_ADD
     if (tilingKey == 10001 || tilingKey == 10011) {
         TPipe sortPipe;
         MoeV2SortOneCore op;
-        op.Init<MoeInitRoutingV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, userWS, tilingData,
-                                            &sortPipe);
+        op.Init<MoeInitRoutingV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, userWS,
+                                            tilingData, &sortPipe);
         op.Process();
         sortPipe.Destroy();
     } else if (tilingKey == 10002 || tilingKey == 10012) {
         TPipe sortPipe;
         MoeV2SortMultiCore op;
-        op.Init<MoeInitRoutingV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, userWS, tilingData,
-                                            &sortPipe);
+        op.Init<MoeInitRoutingV2TilingData>(expertIdx, expertTokensCountOrCumsum, expertTokensBeforeCapacity, userWS,
+                                            tilingData, &sortPipe);
         op.Process();
         sortPipe.Destroy();
     }
@@ -121,5 +120,4 @@ __aicore__ inline  void moe_init_routing_v2(GM_ADDR x, GM_ADDR expertIdx, GM_ADD
     gatherOp.Init(x, expandedRowIdx, expandedX, userWS, tilingData, &gatherPipe);
     gatherOp.Process();
     gatherPipe.Destroy();
-
 }

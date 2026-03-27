@@ -64,13 +64,8 @@ namespace Catlass::Gemm::Kernel {
 constexpr uint16_t SYNCFLAGC2V = 9;
 constexpr uint16_t SYNCFLAGV2C = 10;
 
-template <
-    class BlockMmad_,
-    class BlockScheduler_,
-    class ElementGroupList_,
-    class BlockEpilogue1_,
-    class BlockEpilogue2_
->
+template <class BlockMmad_, class BlockScheduler_, class ElementGroupList_, class BlockEpilogue1_,
+          class BlockEpilogue2_>
 class DispatchFFNCombineKernel
 {
 public:

@@ -22,22 +22,11 @@
 namespace Catlass::Epilogue::Block {
 
 // float scale, dequant per expert
-template <
-    uint32_t UB_STAGES_,
-    class CType_,
-    class LayoutPerTokenScale_,
-    class DType_,
-    class TileElemWiseMuls_,
-    class TileCopy_
->
-class BlockEpilogue <
-    EpilogueAtlasA2PerTokenDequantSwigluQuant<UB_STAGES_>,
-    CType_,
-    Gemm::GemmType<float, LayoutPerTokenScale_>,
-    DType_,
-    TileElemWiseMuls_,
-    TileCopy_
-> {
+template <uint32_t UB_STAGES_, class CType_, class LayoutPerTokenScale_, class DType_, class TileElemWiseMuls_,
+          class TileCopy_>
+class BlockEpilogue<EpilogueAtlasA2PerTokenDequantSwigluQuant<UB_STAGES_>, CType_,
+                    Gemm::GemmType<float, LayoutPerTokenScale_>, DType_, TileElemWiseMuls_, TileCopy_>
+{
 public:
     using DispatchPolicy = EpilogueAtlasA2PerTokenDequantSwigluQuant<UB_STAGES_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
@@ -52,21 +41,20 @@ public:
     using LayoutD = typename DType_::Layout;
 
     // Check data infos
-    static_assert(
-        (std::is_same_v<ElementC, half> || std::is_same_v<ElementC, bfloat16_t>) &&
-        (std::is_same_v<ElementD, float> || std::is_same_v<ElementD, int8_t> || std::is_same_v<ElementD, half> || std::is_same_v<ElementD, bfloat16_t>),
-        "The element type template parameters of BlockEpilogue are wrong"
-    );
-    static_assert(
-        std::is_same_v<LayoutC, layout::RowMajor> &&
-            std::is_same_v<LayoutPerTokenScale, layout::VectorLayout> && std::is_same_v<LayoutD, layout::RowMajor>,
-        "The layout template parameters of BlockEpilogue are wrong"
-    );
+    static_assert((std::is_same_v<ElementC, half> || std::is_same_v<ElementC, bfloat16_t>) &&
+                      (std::is_same_v<ElementD, float> || std::is_same_v<ElementD, int8_t> ||
+                       std::is_same_v<ElementD, half> || std::is_same_v<ElementD, bfloat16_t>),
+                  "The element type template parameters of BlockEpilogue are wrong");
+    static_assert(std::is_same_v<LayoutC, layout::RowMajor> &&
+                      std::is_same_v<LayoutPerTokenScale, layout::VectorLayout> &&
+                      std::is_same_v<LayoutD, layout::RowMajor>,
+                  "The layout template parameters of BlockEpilogue are wrong");
 
     // Tile copy
     using CopyGmToUbC = typename TileCopy_::CopyGmToUbC;
     using CopyUbToGmD = typename TileCopy_::CopyUbToGmD;
-    using CopyUbToGmDequantScale = Epilogue::Tile::CopyUb2Gm<ArchTag, Gemm::GemmType<ElementPerTokenScale, LayoutPerTokenScale>>;
+    using CopyUbToGmDequantScale =
+        Epilogue::Tile::CopyUb2Gm<ArchTag, Gemm::GemmType<ElementPerTokenScale, LayoutPerTokenScale>>;
 
     struct Params {
         __gm__ ElementPerTokenScale *ptrPerTokenScale{nullptr};
@@ -79,9 +67,12 @@ public:
 
         CATLASS_DEVICE
         Params(__gm__ ElementPerTokenScale *ptrPerTokenScale_, LayoutPerTokenScale const &layoutPerTokenScale_,
-            __gm__ ElementD *ptrD_, LayoutD const &layoutD_
-        ) : ptrPerTokenScale(ptrPerTokenScale_), layoutPerTokenScale(layoutPerTokenScale_),
-            ptrD(ptrD_), layoutD(layoutD_) {}
+               __gm__ ElementD *ptrD_, LayoutD const &layoutD_)
+            : ptrPerTokenScale(ptrPerTokenScale_),
+              layoutPerTokenScale(layoutPerTokenScale_),
+              ptrD(ptrD_),
+              layoutD(layoutD_)
+        {}
     };
 
     CATLASS_DEVICE
@@ -132,9 +123,7 @@ public:
         }
     }
     CATLASS_DEVICE
-    ~BlockEpilogue()
-    {
-    }
+    ~BlockEpilogue() {}
 
     CATLASS_DEVICE
     void UpdateParams(Params const &params_)
@@ -143,16 +132,12 @@ public:
     }
     // 每个tile就是1*7168，每个block是一个expert的所有token=[group[i], 7168]
     CATLASS_DEVICE
-    void operator() (
-        AscendC::GlobalTensor<ElementC> const &gmC,
-        MatrixCoord const &shapeC,
-        AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale1,
-        AscendC::GlobalTensor<ElementD> const &gmD,
-        AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale2,
+    void operator()(AscendC::GlobalTensor<ElementC> const &gmC, MatrixCoord const &shapeC,
+                    AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale1,
+                    AscendC::GlobalTensor<ElementD> const &gmD,
+                    AscendC::GlobalTensor<ElementPerTokenScale> const &gmPerTokenScale2,
 
-        uint32_t epilogueCoreNum = 40,
-        Callback &&callback = Callback{}
-    )
+                    uint32_t epilogueCoreNum = 40, Callback &&callback = Callback{})
     {
         callback();
         uint32_t blockM = shapeC.row();
@@ -169,20 +154,19 @@ public:
         }
         uint32_t epilogueCoreIdx = subblockIdx - moveDataCoreNum;
 
-        uint32_t perCoreData =  blockM / epilogueCoreNum;
+        uint32_t perCoreData = blockM / epilogueCoreNum;
         uint32_t remainderData = blockM % epilogueCoreNum;
 
-        uint32_t tasksForIdx  = epilogueCoreIdx < remainderData ? perCoreData + 1 : perCoreData;
-        uint32_t loopStartIdx = epilogueCoreIdx * perCoreData + (epilogueCoreIdx < remainderData? epilogueCoreIdx : remainderData);
+        uint32_t tasksForIdx = epilogueCoreIdx < remainderData ? perCoreData + 1 : perCoreData;
+        uint32_t loopStartIdx =
+            epilogueCoreIdx * perCoreData + (epilogueCoreIdx < remainderData ? epilogueCoreIdx : remainderData);
 
         uint32_t alignedPerCoreData = RoundUp<BYTE_PER_BLK / sizeof(ElementPerTokenScale)>(perCoreData + 1);
 
         uint32_t ChunkTileLen = blockN / 2;
         uint32_t HalfChunkTileLen = ChunkTileLen / 2;
 
-
         for (uint32_t loopIdx = loopStartIdx; loopIdx < loopStartIdx + tasksForIdx; ++loopIdx) {
-
             auto gmTileC = gmC[loopIdx * blockN];
 
             auto &ubC = ubCList[ubListId];
@@ -221,19 +205,19 @@ public:
             AscendC::Muls(ubCFp32, ubCFp32, perTokenScale, blockN);
             AscendC::PipeBarrier<PIPE_V>();
 
-            //swiglue计算过程
+            // swiglue计算过程
             AscendC::Muls(ubCFp32ChunkN, ubCFp32, -1.0f, ChunkTileLen);
             AscendC::PipeBarrier<PIPE_V>();
             AscendC::Exp(ubCFp32ChunkN, ubCFp32ChunkN, ChunkTileLen);
             AscendC::PipeBarrier<PIPE_V>();
             AscendC::Adds(ubCFp32ChunkN, ubCFp32ChunkN, 1.0f, ChunkTileLen);
             AscendC::PipeBarrier<PIPE_V>();
-            //TODO除的时候是否会对之后的数据有影响；
+            // TODO除的时候是否会对之后的数据有影响；
             AscendC::Div(ubCFp32ChunkN, ubCFp32, ubCFp32ChunkN, ChunkTileLen);
             AscendC::PipeBarrier<PIPE_V>();
             AscendC::Mul(ubCFp32ChunkN, ubCFp32ChunkN, ubCFp32[ChunkTileLen], ChunkTileLen);
 
-            //quant过程，两种方式区别；
+            // quant过程，两种方式区别；
             AscendC::PipeBarrier<PIPE_V>();
             AscendC::Abs(ubAbs, ubCFp32ChunkN, ChunkTileLen);
             AscendC::PipeBarrier<PIPE_V>();
@@ -244,7 +228,7 @@ public:
             AscendC::SetFlag<AscendC::HardEvent::V_S>(0);
             AscendC::WaitFlag<AscendC::HardEvent::V_S>(0);
 
-            //TODO两种计算方法的效率比较
+            // TODO两种计算方法的效率比较
             ElementPerTokenScale GMubDequantScale = ubReduceMax.GetValue(0);
             AscendC::SetFlag<AscendC::HardEvent::S_V>(0);
 
@@ -273,26 +257,21 @@ public:
             ubListId = (ubListId + 1 < UB_STAGES) ? (ubListId + 1) : 0;
         }
 
-        if(tasksForIdx > 0){
+        if (tasksForIdx > 0) {
             LayoutPerTokenScale layoutGmPerTokenScale2{tasksForIdx};
 
             AscendC::SetFlag<AscendC::HardEvent::S_MTE3>(EVENT_ID0);
             AscendC::WaitFlag<AscendC::HardEvent::S_MTE3>(EVENT_ID0);
 
-            copyUbToGmDequantScale(gmPerTokenScale2[loopStartIdx], ubPerTokenScaleOutput[0], layoutGmPerTokenScale2, layoutGmPerTokenScale2);
+            copyUbToGmDequantScale(gmPerTokenScale2[loopStartIdx], ubPerTokenScaleOutput[0], layoutGmPerTokenScale2,
+                                   layoutGmPerTokenScale2);
         }
-
-
     }
 
     CATLASS_DEVICE
-    void operator() (
-        AscendC::GlobalTensor<ElementC> const &gmC,
-        MatrixCoord const &shapeC,
-        AscendC::GlobalTensor<ElementD> const &gmD,
-        uint32_t epilogueCoreNum = 40,
-        Callback &&callback = Callback{}
-    )
+    void operator()(AscendC::GlobalTensor<ElementC> const &gmC, MatrixCoord const &shapeC,
+                    AscendC::GlobalTensor<ElementD> const &gmD, uint32_t epilogueCoreNum = 40,
+                    Callback &&callback = Callback{})
     {
         callback();
         uint32_t blockM = shapeC.row();
@@ -300,7 +279,7 @@ public:
 
         uint32_t tileLoops = blockM;
         uint32_t subblockIdx = get_block_idx() + get_subblockid() * get_block_num();
-        //uint32_t subblockIdx = get_block_idx() * 2 + get_subblockid();
+        // uint32_t subblockIdx = get_block_idx() * 2 + get_subblockid();
 
         uint32_t subblockNum = get_block_num() * 2;
         uint32_t moveDataCoreNum = subblockNum - epilogueCoreNum;
@@ -310,21 +289,19 @@ public:
         }
         uint32_t epilogueCoreIdx = subblockIdx - moveDataCoreNum;
 
-
-        uint32_t perCoreData =  blockM / epilogueCoreNum;
+        uint32_t perCoreData = blockM / epilogueCoreNum;
         uint32_t remainderData = blockM % epilogueCoreNum;
 
-        uint32_t tasksForIdx  = epilogueCoreIdx < remainderData ? perCoreData + 1 : perCoreData;
-        uint32_t loopStartIdx = epilogueCoreIdx * perCoreData + (epilogueCoreIdx < remainderData? epilogueCoreIdx : remainderData);
+        uint32_t tasksForIdx = epilogueCoreIdx < remainderData ? perCoreData + 1 : perCoreData;
+        uint32_t loopStartIdx =
+            epilogueCoreIdx * perCoreData + (epilogueCoreIdx < remainderData ? epilogueCoreIdx : remainderData);
 
         uint32_t alignedPerCoreData = RoundUp<BYTE_PER_BLK / sizeof(ElementPerTokenScale)>(perCoreData + 1);
 
         uint32_t ChunkTileLen = blockN / 2;
         uint32_t HalfChunkTileLen = ChunkTileLen / 2;
 
-
         for (uint32_t loopIdx = loopStartIdx; loopIdx < loopStartIdx + tasksForIdx; ++loopIdx) {
-
             auto gmTileC = gmC[loopIdx * blockN];
 
             auto &ubC = ubCList[ubListId];
@@ -366,9 +343,7 @@ public:
             AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(eventUbDMTE3VList[ubListId]);
             ubListId = (ubListId + 1 < UB_STAGES) ? (ubListId + 1) : 0;
         }
-
     }
-
 
 private:
     Params params;
@@ -390,7 +365,6 @@ private:
     AscendC::LocalTensor<int32_t> ubQuantS32List[UB_STAGES];
     AscendC::LocalTensor<half> ubQuantF16List[UB_STAGES];
     AscendC::LocalTensor<float> ubPerTokenScaleOutput;
-
 
     CopyGmToUbC copyGmToUbC;
     CopyUbToGmD copyUbToGmD;

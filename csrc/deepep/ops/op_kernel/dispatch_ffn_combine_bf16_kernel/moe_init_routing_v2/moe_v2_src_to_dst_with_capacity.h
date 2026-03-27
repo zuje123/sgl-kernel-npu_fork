@@ -22,7 +22,8 @@ using namespace AscendC;
 using namespace optiling;
 
 template <typename T, typename TilingData>
-class MoeV2SrcToDstWithCapacity {
+class MoeV2SrcToDstWithCapacity
+{
 public:
     __aicore__ inline MoeV2SrcToDstWithCapacity(){};
     __aicore__ inline void Init(GM_ADDR expandedRowIdx, GM_ADDR expandedX, GM_ADDR workspace,
@@ -240,12 +241,12 @@ __aicore__ inline void MoeV2SrcToDstWithCapacity<T, TilingData>::Init(GM_ADDR ex
     expandedRowIdxGm.SetGlobalBuffer((__gm__ int32_t *)expandedRowIdx, length);
     expandedXGm.SetGlobalBuffer((__gm__ T *)expandedX, this->expertNum * this->expertCapacity * this->cols);
 
-    expandedExpertIdxGm.SetGlobalBuffer((__gm__ int32_t *)workspace +
-                                            this->blockIdx * this->srcToDstTilingData->perCoreRows,
-                                        Align(this->coreRows, sizeof(int32_t)));
-    expandDstToSrcRowGm.SetGlobalBuffer((__gm__ int32_t *)workspace + length +
-                                            this->blockIdx * this->srcToDstTilingData->perCoreRows,
-                                        Align(this->coreRows, sizeof(int32_t)));
+    expandedExpertIdxGm.SetGlobalBuffer(
+        (__gm__ int32_t *)workspace + this->blockIdx * this->srcToDstTilingData->perCoreRows,
+        Align(this->coreRows, sizeof(int32_t)));
+    expandDstToSrcRowGm.SetGlobalBuffer(
+        (__gm__ int32_t *)workspace + length + this->blockIdx * this->srcToDstTilingData->perCoreRows,
+        Align(this->coreRows, sizeof(int32_t)));
     expertIdxValueGm.SetGlobalBuffer((__gm__ int32_t *)workspace + length * 2, this->coreNum * 2);
 
     pipe->InitBuffer(copyInQueue, 1, AlignBytes(this->perLoopRows, sizeof(int32_t)) * 2);
@@ -275,5 +276,5 @@ __aicore__ inline void MoeV2SrcToDstWithCapacity<T, TilingData>::Process()
     }
     this->SyncAll();
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_SRC_TO_DST_WITH_CAPACITY_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_SRC_TO_DST_WITH_CAPACITY_H

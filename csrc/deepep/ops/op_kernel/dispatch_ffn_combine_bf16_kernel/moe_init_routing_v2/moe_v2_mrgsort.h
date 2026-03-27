@@ -28,7 +28,8 @@ struct MoeV2MrgsortParam {
     int64_t oneLoopMaxElements;
 };
 
-class MoeV2Mrgsort {
+class MoeV2Mrgsort
+{
 public:
     __aicore__ inline MoeV2Mrgsort(){};
     __aicore__ inline void Init(MoeV2MrgsortParam *param);
@@ -207,5 +208,5 @@ __aicore__ inline void MoeV2Mrgsort::Process()
 
     ClearCache();
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_MRGSORT_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_MRGSORT_H

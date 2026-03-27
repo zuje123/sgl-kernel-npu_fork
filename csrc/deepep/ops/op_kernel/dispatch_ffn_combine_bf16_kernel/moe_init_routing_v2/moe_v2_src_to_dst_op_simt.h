@@ -21,7 +21,8 @@ namespace MoeInitRoutingV2 {
 using namespace AscendC;
 using namespace optiling;
 
-class MoeV2SrcToDstOpSimt {
+class MoeV2SrcToDstOpSimt
+{
 public:
     __aicore__ inline MoeV2SrcToDstOpSimt(){};
     template <typename TilingData>
@@ -92,5 +93,5 @@ __aicore__ inline void MoeV2SrcToDstOpSimt::Process()
     }
     this->SyncAll();
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_SRC_TO_DST_SIMT_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_SRC_TO_DST_SIMT_H

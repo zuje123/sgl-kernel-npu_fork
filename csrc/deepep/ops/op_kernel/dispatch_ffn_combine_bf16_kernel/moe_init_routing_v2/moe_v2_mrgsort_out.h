@@ -22,7 +22,8 @@ namespace MoeInitRoutingV2 {
 using namespace AscendC;
 using namespace optiling;
 
-class MoeV2MrgsortOut {
+class MoeV2MrgsortOut
+{
 public:
     __aicore__ inline MoeV2MrgsortOut(){};
     __aicore__ inline void Init(MoeV2MrgsortParam *param, TPipe *tPipe);
@@ -204,9 +205,11 @@ __aicore__ inline void MoeV2MrgsortOut::CopyOut()
     SetWaitFlag<HardEvent::V_MTE3>(HardEvent::V_MTE3);
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
     if (needCopyOut) {
-        DataCopyCustom<int32_t,true,false>(this->gmOutput1[outOffset], this->ubOutputInt1, intriParams.blockCount, intriParams.blockLen);
+        DataCopyCustom<int32_t, true, false>(this->gmOutput1[outOffset], this->ubOutputInt1, intriParams.blockCount,
+                                             intriParams.blockLen);
     }
-    DataCopyCustom<int32_t,true,false>(this->gmOutput2[outOffset], this->ubOutputInt2, intriParams.blockCount, intriParams.blockLen);
+    DataCopyCustom<int32_t, true, false>(this->gmOutput2[outOffset], this->ubOutputInt2, intriParams.blockCount,
+                                         intriParams.blockLen);
 #else
     DataCopyPad(this->gmOutput2[outOffset], this->ubOutputInt2, intriParams);
     DataCopyPad(this->gmOutput1[outOffset], this->ubOutputInt1, intriParams);
@@ -241,5 +244,5 @@ __aicore__ inline void MoeV2MrgsortOut::Process()
     }
     ClearCache();
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_MRGSORT_OUT_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_MRGSORT_OUT_H

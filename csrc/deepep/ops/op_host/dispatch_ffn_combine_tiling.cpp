@@ -148,9 +148,9 @@ static ge::graphStatus DispatchFFNCombineCheckShapeAndSetTiling(gert::TilingCont
     info.expertPerRank = expertPerRank;
     info.topK = topK;
     info.listLen = listLen;
-    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);  // num_tokens
-    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);  // hidden
-    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);  // moe_intermediate_size
+    OP_LOGD(K_INNER_DEBUG, "M=%d ", info.M);                          // num_tokens
+    OP_LOGD(K_INNER_DEBUG, "K=%d ", info.K);                          // hidden
+    OP_LOGD(K_INNER_DEBUG, "N=%d ", info.N);                          // moe_intermediate_size
     OP_LOGD(K_INNER_DEBUG, "expertPerRank=%d ", info.expertPerRank);  // num_local_experts
     OP_LOGD(K_INNER_DEBUG, "topK=%d ", info.topK);
     OP_LOGD(K_INNER_DEBUG, "listLen=%d ", info.listLen);

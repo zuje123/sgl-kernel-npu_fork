@@ -21,7 +21,8 @@ namespace MoeInitRoutingV2 {
 using namespace AscendC;
 using namespace optiling;
 
-class MoeV2SortBase {
+class MoeV2SortBase
+{
 public:
     __aicore__ inline MoeV2SortBase(){};
 
@@ -70,5 +71,5 @@ __aicore__ inline void MoeV2SortBase::SyncAll()
 #endif
 }
 
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_SORT_BASE_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_SORT_BASE_H

@@ -4,7 +4,8 @@
  * This file is a part of the CANN Open Software.
  * Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
  * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
@@ -25,7 +26,8 @@ using namespace AscendC;
 constexpr int64_t BUFFER_NUM = 2;
 
 template <typename T>
-class MoeV2GatherOut {
+class MoeV2GatherOut
+{
 public:
     __aicore__ inline MoeV2GatherOut(){};
     __aicore__ inline void Init(GM_ADDR inputX, GM_ADDR expandedRowIdx, GM_ADDR expandedX, GM_ADDR workspace,
@@ -172,9 +174,9 @@ __aicore__ inline void MoeV2GatherOut<T>::Init(GM_ADDR inputX, GM_ADDR expandedR
 
     inputXGm.SetGlobalBuffer((__gm__ T *)inputX, this->coreRows * this->cols);
     expandedXGm.SetGlobalBuffer((__gm__ T *)expandedX, tilingData->n * tilingData->k * this->cols);
-    expandedRowIdxGm.SetGlobalBuffer((__gm__ int32_t *)expandedRowIdx +
-                                         this->blockIdx * this->gatherOutTilingData->perCoreRows,
-                                     Align(this->coreRows, sizeof(int32_t)));
+    expandedRowIdxGm.SetGlobalBuffer(
+        (__gm__ int32_t *)expandedRowIdx + this->blockIdx * this->gatherOutTilingData->perCoreRows,
+        Align(this->coreRows, sizeof(int32_t)));
 
     pipe->InitBuffer(inputActivationsCopyInQueue, BUFFER_NUM, AlignBytes(this->perLoopCols, sizeof(T)));
     pipe->InitBuffer(expandDstToSrcRowCopyInQueue, BUFFER_NUM, AlignBytes(this->perLoopRows, sizeof(int32_t)));
@@ -194,5 +196,5 @@ __aicore__ inline void MoeV2GatherOut<T>::Process()
         }
     }
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_GATHER_OUT_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_GATHER_OUT_H

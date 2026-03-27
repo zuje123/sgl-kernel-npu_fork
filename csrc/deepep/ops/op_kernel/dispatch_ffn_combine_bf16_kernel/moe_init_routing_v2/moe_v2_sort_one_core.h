@@ -22,7 +22,8 @@ namespace MoeInitRoutingV2 {
 using namespace AscendC;
 using namespace optiling;
 
-class MoeV2SortOneCore : public MoeV2SortBase {
+class MoeV2SortOneCore : public MoeV2SortBase
+{
 public:
     __aicore__ inline MoeV2SortOneCore(){};
     template <typename TilingData>
@@ -121,9 +122,11 @@ __aicore__ inline void MoeV2SortOneCore::CopyOut()
     intriParams.blockCount = 1;
     intriParams.blockLen = this->totalLength * sizeof(int32_t);
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-    DataCopyCustom<int32_t,true,false>(expandDstToSrcRowGm, outLocal[this->sortNum], intriParams.blockCount, intriParams.blockLen);
+    DataCopyCustom<int32_t, true, false>(expandDstToSrcRowGm, outLocal[this->sortNum], intriParams.blockCount,
+                                         intriParams.blockLen);
     if (this->needCopy) {
-        DataCopyCustom<int32_t,true,false>(sortedexpertIdxGm, outLocal[0], intriParams.blockCount, intriParams.blockLen);
+        DataCopyCustom<int32_t, true, false>(sortedexpertIdxGm, outLocal[0], intriParams.blockCount,
+                                             intriParams.blockLen);
     }
 #else
     DataCopyPad(sortedexpertIdxGm, outLocal[0], intriParams);
@@ -222,5 +225,5 @@ __aicore__ inline void MoeV2SortOneCore::Process()
     this->SyncAll();
 #endif
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_SORT_ONE_CORE_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_SORT_ONE_CORE_H

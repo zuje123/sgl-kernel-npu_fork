@@ -4,7 +4,8 @@
  * This file is a part of the CANN Open Software.
  * Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
  * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
@@ -22,7 +23,8 @@ using namespace AscendC;
 using namespace optiling;
 
 template <typename T>
-class MoeV2FullLoad : public MoeV2SortBase {
+class MoeV2FullLoad : public MoeV2SortBase
+{
 public:
     __aicore__ inline MoeV2FullLoad(){};
     __aicore__ inline void Init(GM_ADDR x, GM_ADDR expertIdx, GM_ADDR expandedX, GM_ADDR expandedRowIdx,
@@ -298,7 +300,7 @@ __aicore__ inline void MoeV2FullLoad<T>::Init(GM_ADDR x, GM_ADDR expertIdx, GM_A
                                               const MoeInitRoutingV2TilingData *tilingData, TPipe *tPipe)
 {
     this->gatherOutTilingData_ = &(tilingData->gatherOutComputeParamsOp);
-    //this->blockIdx_ = GetBlockIdx();
+    // this->blockIdx_ = GetBlockIdx();
     this->blockIdx_ = get_block_idx() + get_subblockid() * get_block_num();
     this->n_ = tilingData->n;
     this->k_ = tilingData->k;
@@ -413,5 +415,5 @@ __aicore__ inline void MoeV2FullLoad<T>::Process()
         }
     }
 }
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_FULL_LOAD_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_FULL_LOAD_H

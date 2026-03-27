@@ -4,7 +4,8 @@
  * This file is a part of the CANN Open Software.
  * Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
  * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
@@ -23,7 +24,8 @@ using namespace optiling;
 
 constexpr int64_t EXPERT_ID_VALUE_NUM = 2;
 
-class MoeV2ExpertTokenOut {
+class MoeV2ExpertTokenOut
+{
 public:
     __aicore__ inline MoeV2ExpertTokenOut(){};
     template <typename TilingData>
@@ -194,9 +196,8 @@ __aicore__ inline void MoeV2ExpertTokenOut::CopyOutExpertTokensCumsum(bool isTai
                                  0};
     SetAtomicAdd<int32_t>();
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-    DataCopyCustom<int32_t,false,false>(
-        expertTokensCountOrCumsumGm[this->firstExpertId], this->expertTokenIdxOutLocal,
-        copyParams.blockCount, copyParams.blockLen);
+    DataCopyCustom<int32_t, false, false>(expertTokensCountOrCumsumGm[this->firstExpertId],
+                                          this->expertTokenIdxOutLocal, copyParams.blockCount, copyParams.blockLen);
 #else
     DataCopyPad(expertTokensCountOrCumsumGm[this->firstExpertId], this->expertTokenIdxOutLocal, copyParams);
 #endif
@@ -214,10 +215,9 @@ __aicore__ inline void MoeV2ExpertTokenOut::CopyOutExpertTokensCumsum(bool isTai
             SetAtomicAdd<int32_t>();
 
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-            DataCopyCustom<int32_t,false,false>(
+            DataCopyCustom<int32_t, false, false>(
                 expertTokensCountOrCumsumGm[this->lastExpertId + 1 + this->expertNumUbAlign * i],
-                this->expertTokenIdxOutLocal,
-                params.blockCount, params.blockLen);
+                this->expertTokenIdxOutLocal, params.blockCount, params.blockLen);
 
 #else
             DataCopyPad(expertTokensCountOrCumsumGm[this->lastExpertId + 1 + this->expertNumUbAlign * i],
@@ -240,16 +240,16 @@ __aicore__ inline void MoeV2ExpertTokenOut::CopyOutExpertTokensCount(bool isTail
     SetAtomicAdd<int32_t>();
     if (this->dropPadMode == DROP_PAD_MODE && expertTokensBeforeCapacityFlag > EXERPT_TOKENS_NONE) {
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-        DataCopyCustom<int32_t,false,false>(expertTokensBeforeCapacityGm[this->firstExpertId],
-            this->expertTokenIdxOutLocal, copyParams.blockCount, copyParams.blockLen);
- #else
+        DataCopyCustom<int32_t, false, false>(expertTokensBeforeCapacityGm[this->firstExpertId],
+                                              this->expertTokenIdxOutLocal, copyParams.blockCount, copyParams.blockLen);
+#else
         DataCopyPad(expertTokensBeforeCapacityGm[this->firstExpertId], this->expertTokenIdxOutLocal, copyParams);
 #endif
     }
     if (this->dropPadMode == DROPLESS_MODE && expertTokensCountOrCumsumFlag == EXERPT_TOKENS_COUNT) {
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-        DataCopyCustom<int32_t,false,false>(expertTokensCountOrCumsumGm[this->firstExpertId], this->expertTokenIdxOutLocal,
-            copyParams.blockCount, copyParams.blockLen);
+        DataCopyCustom<int32_t, false, false>(expertTokensCountOrCumsumGm[this->firstExpertId],
+                                              this->expertTokenIdxOutLocal, copyParams.blockCount, copyParams.blockLen);
 #else
         DataCopyPad(expertTokensCountOrCumsumGm[this->firstExpertId], this->expertTokenIdxOutLocal, copyParams);
 #endif
@@ -271,8 +271,9 @@ __aicore__ inline void MoeV2ExpertTokenOut::CopyOutTokenGm()
                                  0, 0, 0};
     SetWaitFlag<HardEvent::S_MTE3>(HardEvent::S_MTE3);
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-    DataCopyCustom<int32_t,false,false>(expertIdxValueGm[this->blockIdx * BLOCK_BYTES / sizeof(int32_t)],
-             this->expertTokenIdxOutLocal[this->expertNumUbAlign], copyParams.blockCount, copyParams.blockLen);
+    DataCopyCustom<int32_t, false, false>(expertIdxValueGm[this->blockIdx * BLOCK_BYTES / sizeof(int32_t)],
+                                          this->expertTokenIdxOutLocal[this->expertNumUbAlign], copyParams.blockCount,
+                                          copyParams.blockLen);
 #else
     DataCopyPad(expertIdxValueGm[this->blockIdx * EXPERT_ID_VALUE_NUM],
                 this->expertTokenIdxOutLocal[this->expertNumUbAlign], copyParams);
@@ -331,9 +332,9 @@ __aicore__ inline void MoeV2ExpertTokenOut::Init(GM_ADDR expertTokensCountOrCums
         expertTokensBeforeCapacityGm.SetGlobalBuffer((__gm__ int32_t *)expertTokensBeforeCapacity, this->expertNum);
     }
 
-    expandedExpertIdxGm.SetGlobalBuffer((__gm__ int32_t *)workspace +
-                                            this->blockIdx * this->srcToDstTilingData->perCoreRows,
-                                        Align(this->coreRows, sizeof(int32_t)));
+    expandedExpertIdxGm.SetGlobalBuffer(
+        (__gm__ int32_t *)workspace + this->blockIdx * this->srcToDstTilingData->perCoreRows,
+        Align(this->coreRows, sizeof(int32_t)));
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
     syncTmpSpaceGm_.SetGlobalBuffer((__gm__ int32_t *)workspace +
                                         Align(this->totalLength, sizeof(int32_t)) * EXERPT_TOKENS_COUNT +
@@ -376,5 +377,5 @@ __aicore__ inline void MoeV2ExpertTokenOut::Process()
     this->SyncAll();
 }
 
-} // namespace MoeInitRoutingV2
-#endif // MOE_V2_EXPERT_TOKEN_OUT_H
+}  // namespace MoeInitRoutingV2
+#endif  // MOE_V2_EXPERT_TOKEN_OUT_H
