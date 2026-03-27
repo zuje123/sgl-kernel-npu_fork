@@ -37,6 +37,7 @@ private:
     __aicore__ inline void CopyOutEmpty();
     __aicore__ inline void CopyOutX();
     __aicore__ inline void ComputeExpertTokenCountOrCumsum();
+    __aicore__ inline void ComputeForZero();
 
 private:
     int64_t sortNum_;
@@ -358,8 +359,36 @@ __aicore__ inline void MoeV2FullLoad<T>::Init(GM_ADDR x, GM_ADDR expertIdx, GM_A
 }
 
 template <typename T>
+__aicore__ inline void MoeV2FullLoad<T>::ComputeForZero()
+{
+    // only need init expertTokensCountOrCumsum when n=0
+    LocalTensor<int32_t> expertTokensCount = expertTokensCopyOutQueue_.AllocTensor<int32_t>();
+
+    int64_t expertNumAlign = Align(this->expertNum, sizeof(int32_t));
+    Duplicate(expertTokensCount, 0, expertNumAlign);
+    PipeBarrier<PIPE_V>();
+
+    DataCopyExtParams copyParams{static_cast<uint16_t>(1), static_cast<uint32_t>(this->expertNum * sizeof(int32_t)), 0,
+                                 0, 0};
+    if (this->expertTokensCountOrCumsumFlag > 0) {
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+        DataCopyCustom(expertTokensCountOrCumsumGm, expertTokensCount, copyParams.blockCount, copyParams.blockLen);
+#else
+        DataCopyPad(expertTokensCountOrCumsumGm, expertTokensCount, copyParams);
+#endif
+    }
+    expertTokensCopyOutQueue_.FreeTensor(expertTokensCount);
+}
+
+template <typename T>
 __aicore__ inline void MoeV2FullLoad<T>::Process()
 {
+    if (this->totalLength == 0) {
+        if (this->blockIdx_ == 0) {
+            ComputeForZero();
+        }
+        return;
+    }
     if (this->blockIdx_ < this->sortNeedCoreNum_) {
         CopyIn();
         SortCompute();
