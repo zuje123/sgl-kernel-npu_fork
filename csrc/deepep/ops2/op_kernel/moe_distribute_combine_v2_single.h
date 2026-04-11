@@ -496,14 +496,14 @@ __aicore__ inline void MoeDistributeCombineV2Single<TemplateMC2TypeA2SingleFunc>
         scaleDupLocalTensor_ = mulBuf_.Get<float>();
         scaleDivFloatTensor_ = xAbsBuf_.Get<float>();
     }
-    if (isInputTokenMaskFlag_) {
+    if (axisBS_ != 0 && isInputTokenMaskFlag_) {
         axisBsAlignSize_ = Ceil(axisBS_ * sizeof(bool), UB_ALIGN) * UB_ALIGN;
         tpipe_->InitBuffer(xActMaskTBuf_, axisBsAlignSize_);
         tpipe_->InitBuffer(xActMaskCastTBuf_, axisBsAlignSize_ * sizeof(half));
         tpipe_->InitBuffer(xActMaskSumTBuf_, axisBsAlignSize_ * sizeof(half));
         TokenMaskCalCnt();  // 计算一维mask
     }
-    if (isInputExpertMaskFlag_) {
+    if (axisBS_ != 0 && isInputExpertMaskFlag_) {
         tpipe_->InitBuffer(tokenTargetTBuf_, Ceil(axisBS_ * sizeof(half), UB_ALIGN) * UB_ALIGN);
         tpipe_->InitBuffer(vaildBsIndexTBuf_, Ceil(axisBS_ * sizeof(int32_t), UB_ALIGN) * UB_ALIGN);
         tokenTargetTensor_ = tokenTargetTBuf_.Get<half>();
