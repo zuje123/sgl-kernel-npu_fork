@@ -19,6 +19,7 @@
 #include "register/op_def_registry.h"
 #include "../op_kernel/moe_distribute_dispatch_tiling.h"
 #include "../op_kernel/moe_distribute_dispatch_v2_tiling.h"
+#include "tiling_args.h"
 
 #ifdef USE_CANN83_PATH
 #include "platform/platform_infos_def.h"
@@ -1055,6 +1056,7 @@ static void SetHcommCfg(const gert::TilingContext *context, MoeDistributeDispatc
 static ge::graphStatus CheckWinSize(MoeDistributeDispatchV2TilingData &tilingData, const char *nodeName,
                                     const bool isSetCommAlg, uint32_t &localMoeExpertNum)
 {
+    int enbaleHybrid = Mc2TilingUtils::GetEnv("DEEPEP_ENBALE_HYBRID", 1); // 是否为PD混部场景，默认为1(混部)，否则为PD分离
     uint64_t maxWindowSize = Mc2TilingUtils::GetMaxWindowSize();
     uint32_t sharedExpertNum = tilingData.moeDistributeDispatchV2Info.sharedExpertNum;
     uint64_t h = static_cast<uint64_t>(tilingData.moeDistributeDispatchV2Info.h);
@@ -1072,8 +1074,12 @@ static ge::graphStatus CheckWinSize(MoeDistributeDispatchV2TilingData &tilingDat
     } else {
         tokenNeedSizeDispatch = ((tokenActualLen + WIN_ADDR_ALIGN - 1UL) / WIN_ADDR_ALIGN) * WIN_ADDR_ALIGN;
     }
+    uint64_t cclBufSizeForNotify = 0;
+    if (enbaleHybrid == 1) {
+        cclBufSizeForNotify = Moe::NOTIFY_DISPATCH_WIN_OFFSET;
+    }
     uint64_t actualSize = ((maxBs * tokenNeedSizeDispatch * epWorldSize * static_cast<uint64_t>(localMoeExpertNum)) +
-                           (maxBs * tokenNeedSizeCombine * (k + static_cast<uint64_t>(sharedExpertNum)))) *
+                           (maxBs * tokenNeedSizeCombine * (k + static_cast<uint64_t>(sharedExpertNum))) + cclBufSizeForNotify) *
                           DOUBLE_DATA_BUFFER;
     OP_TILING_CHECK(
         (actualSize > maxWindowSize),
@@ -1081,11 +1087,12 @@ static ge::graphStatus CheckWinSize(MoeDistributeDispatchV2TilingData &tilingDat
             nodeName,
             "HCCL_BUFFSIZE is too SMALL, maxBs = %lu, h = %lu, epWorldSize = %lu,"
             " localMoeExpertNum = %u, sharedExpertNum = %u, tokenNeedSizeDispatch = %lu, tokenNeedSizeCombine = %lu,"
+            " cclBufSizeForNotify = %lu,"
             " k = %lu, NEEDED_HCCL_BUFFSIZE(((maxBs * tokenNeedSizeDispatch * ep_worldsize * localMoeExpertNum) +"
-            " (maxBs * tokenNeedSizeCombine * (k + sharedExpertNum))) * 2) = %luMB,"
+            " (maxBs * tokenNeedSizeCombine * (k + sharedExpertNum)) + cclBufSizeForNotify) * 2) = %luMB,"
             " HCCL_BUFFSIZE=%luMB.",
-            maxBs, h, epWorldSize, localMoeExpertNum, sharedExpertNum, tokenNeedSizeDispatch, tokenNeedSizeCombine, k,
-            actualSize / MB_SIZE + 1UL, maxWindowSize / MB_SIZE),
+            maxBs, h, epWorldSize, localMoeExpertNum, sharedExpertNum, tokenNeedSizeDispatch, tokenNeedSizeCombine,
+            cclBufSizeForNotify, k, actualSize / MB_SIZE + 1UL, maxWindowSize / MB_SIZE),
         return ge::GRAPH_FAILED);
     tilingData.moeDistributeDispatchV2Info.totalWinSize = maxWindowSize;
     OP_LOGD(nodeName, "windowSize = %lu", maxWindowSize);

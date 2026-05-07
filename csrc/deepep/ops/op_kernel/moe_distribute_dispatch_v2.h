@@ -9,6 +9,7 @@
 #include "check_winsize.h"
 
 namespace MoeDistributeDispatchV2Impl {
+constexpr uint64_t NOTIFY_DISPATCH_BUFF_OFFSET = 102UL * 1024UL * 1024UL;  // 混部时需要偏移notify占用的ccl_buf
 constexpr uint8_t BUFFER_NUM = 2;  // 多buf
 constexpr uint8_t BUFFER_SINGLE = 1;
 constexpr uint32_t STATE_OFFSET = 32U;        // 状态空间偏移地址
@@ -92,10 +93,10 @@ private:
     {
         uint32_t curRankId = ((ctxIdx == COMM_EP_IDX) ? epRankIdOriginal_ : tpRankId_);
         if (curRankId == rankId) {
-            return (GM_ADDR)(winContext_[ctxIdx]->localWindowsIn) + winDataSizeOffset_;
+            return (GM_ADDR)(winContext_[ctxIdx]->localWindowsIn) + winDataSizeOffset_ + NOTIFY_DISPATCH_BUFF_OFFSET;
         }
         return (GM_ADDR)(((HcclRankRelationResV2 *)(winContext_[ctxIdx]->remoteRes[rankId].nextDevicePtr))->windowsIn) +
-               winDataSizeOffset_;
+               winDataSizeOffset_ + NOTIFY_DISPATCH_BUFF_OFFSET;
     }
 
     __aicore__ inline GM_ADDR GetWindStateAddrByRankId(uint8_t ctxIdx, const int32_t rankId)

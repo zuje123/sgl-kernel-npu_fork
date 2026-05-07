@@ -32,6 +32,38 @@ public:
         OP_LOGI("", "Get maxWindowSize is %lu", maxWindowSize);
         return maxWindowSize;
     }
+
+    template <typename T>
+    static T GetEnv(const char *name, T defaultValue)
+    {
+        const char *envValue = std::getenv(name);
+        if (envValue == nullptr) {
+            return defaultValue;
+        }
+
+        std::string envStr(envValue);
+        T result;
+        const char *end;
+
+        try {
+            if (std::is_same<T, float>::value || std::is_same<T, double>::value) {
+                result = static_cast<T>(std::stod(envStr));
+            } else if (std::is_integral<T>::value) {
+                result = static_cast<T>(std::stoi(envStr));
+            } else {
+                // 如果是不支持的类型
+                return defaultValue;
+            }
+            return result;
+        } catch (const std::invalid_argument &ia) {
+            OP_LOGE("", "Invalid argument when parsing %s: %s", name, ia.what());
+        } catch (const std::out_of_range &oor) {
+            OP_LOGE("", "Out of range when parsing %s: %s", name, oor.what());
+        } catch (...) {
+            OP_LOGE("", "Unexpected error when parsing %s", name);
+        }
+        return defaultValue;
+    }
 };
 
 #endif
