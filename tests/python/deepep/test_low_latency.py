@@ -79,21 +79,23 @@ def test(
         (num_local_experts,), dtype=torch.int, device="npu"
     )
 
-    if quant_type == "mxfp8":
-        fp8_configs = [(True, True)]
-    elif quant_type == "fp8":
-        fp8_configs = [(True, False)]
-    else:
-        fp8_configs = [(False, False)]
+    if quant_type == "mxfp4":
+        quant_configs = [(True, True, True)]
+    elif quant_type == "mxfp8":
+        quant_configs = [(True, True, False)]
+    elif quant_type == "int8":
+        quant_configs = [(True, False, False)]
+    else: # no quant
+        quant_configs = [(False, False, False)]
 
-    for dispatch_use_fp8, dispatch_use_ue8m0 in fp8_configs:
+    for dispatch_use_fp8, dispatch_use_ue8m0, dispatch_use_mxfp4 in quant_configs:
         for current_x in filter(lambda elem: elem is not None, (x_pure_rand,)):
             quant_label = (
                 "mxfp8" if dispatch_use_ue8m0 else "fp8" if dispatch_use_fp8 else "bf16"
             )
             if local_rank == 0:
                 print(
-                    f'[testing] Running with {quant_label}, data={"rand" if current_x is x_pure_rand else "uniform"} ...',
+                    f'[testing] Running with {quant_type=}, data={"rand" if current_x is x_pure_rand else "uniform"} ...',
                     flush=True,
                 )
 
@@ -106,6 +108,7 @@ def test(
                     use_fp8=dispatch_use_fp8,
                     round_scale=False,
                     use_ue8m0=dispatch_use_ue8m0,
+                    use_mxfp4=dispatch_use_mxfp4,
                     cumulative_local_expert_recv_stats=cumulative_local_expert_recv_stats,
                     async_finish=not return_recv_hook,
                     return_recv_hook=return_recv_hook,
@@ -149,9 +152,7 @@ def test(
                 if dispatch_use_fp8
                 else packed_recv_x[int(i * temp) : int((i + 1) * temp)]
             )
-            quant_label = (
-                "mxfp8" if dispatch_use_ue8m0 else "fp8" if dispatch_use_fp8 else "bf16"
-            )
+
             if i == 0:
                 recv_layout_range = handle[1][(i + 1) * num_ranks - 1]
             else:
@@ -240,9 +241,11 @@ def test(
                     torch.abs(combined_x - golden) / golden_nozero
                 ).item()
                 print(
-                    f"rank {rank} PASSED [{quant_label}] avg_diff={avg_diff:.5f}, max_diff={max_diff:.5f}, cosine_diff={diff:.5f}"
+                    f"rank {rank} PASSED [{quant_type=}] avg_diff={avg_diff:.5f}, max_diff={max_diff:.5f}, cosine_diff={diff:.5f}"
                 )
-                if dispatch_use_ue8m0:
+                if dispatch_use_mxfp4:
+                    assert diff < 1e-2, f"Error: {diff=}"
+                elif dispatch_use_ue8m0:
                     assert diff < 1e-3, f"Error: {diff=}"
                 elif dispatch_use_fp8:
                     assert diff < 1e-4, f"Error: {diff=}"
@@ -264,6 +267,7 @@ def test(
             cumulative_local_expert_recv_stats=cumulative_local_expert_recv_stats,
             use_fp8=dispatch_use_fp8,
             use_ue8m0=dispatch_use_ue8m0,
+            use_mxfp4=dispatch_use_mxfp4,
             async_finish=False,
             return_recv_hook=return_recv_hook,
             topk_weights=topk_weights,
@@ -271,6 +275,7 @@ def test(
         simulated_gemm_x_local = (
             per_token_cast_back(*recv_x) if dispatch_use_fp8 else recv_x
         )
+        dist.barrier()  # mxfp4反量化时间太长，对combine的影响较大，因此加同步
         combined_x, event, hook = buffer.low_latency_combine(
             simulated_gemm_x_local,
             topk_idx,
@@ -280,29 +285,35 @@ def test(
             return_recv_hook=return_recv_hook,
         )
 
-    # Calculate bandwidth
-    num_mxfp8_bytes = hidden + hidden // 32 + 16
-    num_fp8_bytes = hidden + hidden // 128 * 4 + 16
+    # Calculate bandwidth based on quant_type
+    def calculate_dispatch_bytes(num_tokens, hidden, quant_type):
+        BLOCK_SIZE = 32
+        num_values = num_tokens * hidden
+        if quant_type == "int8":
+            data_bytes = num_values * 1
+            scale_bytes = num_tokens * 2
+            return data_bytes + scale_bytes
+        elif quant_type == "mxfp8":
+            data_bytes = num_values * 1
+            scale_bytes = (num_values // BLOCK_SIZE) * 1
+            return data_bytes + scale_bytes
+        elif quant_type == "mxfp4":
+            data_bytes = num_values * 0.5
+            scale_bytes = (num_values // BLOCK_SIZE) * 1
+            return data_bytes + scale_bytes
+        else:
+            return num_values * 2
+
     num_bf16_bytes = hidden * 2
     num_dispatch_comm_bytes, num_combine_comm_bytes = 0, 0
     for i in range(num_tokens):
         num_selections = (topk_idx[i] != -1).sum().item()
-        if dispatch_use_ue8m0:
-            num_dispatch_comm_bytes += num_mxfp8_bytes * num_selections
-        elif dispatch_use_fp8:
-            num_dispatch_comm_bytes += num_fp8_bytes * num_selections
-        else:
-            num_dispatch_comm_bytes += num_bf16_bytes * num_selections
+        num_dispatch_comm_bytes += calculate_dispatch_bytes(num_selections, hidden, quant_type)
         num_combine_comm_bytes += num_bf16_bytes * num_selections
 
     # Dispatch + combine testing
     avg_t, min_t, max_t = bench(
         partial(test_func, zero_copy=False, return_recv_hook=False)
-    )
-    print(
-        f"[rank {rank}] Dispatch + combine bandwidth: {(num_dispatch_comm_bytes + num_combine_comm_bytes) / 1e9 / avg_t:.2f} GB/s, "
-        f"avg_t={avg_t * 1e6:.2f} us, min_t={min_t * 1e6:.2f} us, max_t={max_t * 1e6:.2f} us",
-        flush=True,
     )
     if all_to_all_mode:
         return hash_value
@@ -506,8 +517,8 @@ if __name__ == "__main__":
         dest="quant_type",
         type=str,
         default="no",
-        choices=["no", "fp8", "mxfp8"],
-        help="Quantization type for dispatch: no (bf16), fp8 (per-token), mxfp8 (per-block with e8m0 scales)",
+        choices=["no", "int8", "mxfp8", "mxfp4"],
+        help="Quantization type for dispatch: no (bf16), int8 (per-token), mxfp8/mxfp4 (per-block with e8m0 scales)",
     )
     args = parser.parse_args()
 
