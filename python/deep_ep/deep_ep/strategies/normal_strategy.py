@@ -588,8 +588,23 @@ class AlltoAllNormalCommStrategy(NormalEPCommStrategy):
         ]
         global_tokens_indices = layout["global_tokens_indices"]
 
-        hidden_shape = x.shape
-        x = x.view(-1, hidden_shape[-1])
+        use_quant = False
+        if isinstance(x, torch.Tensor):
+            hidden_shape = x.shape
+            x = x.view(-1, hidden_shape[-1])
+        elif isinstance(x, tuple) and len(x) == 2:
+            x, quant_type_tensor = x
+            hidden_shape = x.shape
+            x = x.view(-1, hidden_shape[-1])
+
+            if quant_type_tensor.dtype == torch.int8:
+                quant_type = "int8"
+                use_quant = True
+        else:
+            raise TypeError(f'Unsupport x type: {type(x)}')
+
+        if not use_quant:
+            use_quant = os.getenv("DEEP_NORMAL_MODE_USE_INT8_QUANT") == "1"
 
         permutated_tokens, reversed_local_mapping = torch_npu.npu_moe_token_permute(
             tokens=x,
@@ -597,8 +612,7 @@ class AlltoAllNormalCommStrategy(NormalEPCommStrategy):
             num_out_tokens=topk_idx.numel(),
         )
 
-        input_quant = os.getenv("DEEP_NORMAL_MODE_USE_INT8_QUANT") == "1"
-        if input_quant:
+        if use_quant:
             permutated_tokens, dynamic_scale = torch_npu.npu_dynamic_quant(
                 permutated_tokens
             )
@@ -618,7 +632,7 @@ class AlltoAllNormalCommStrategy(NormalEPCommStrategy):
         permutated_tokens.untyped_storage().resize_(0)
 
         if num_local_experts > 1:
-            if input_quant:
+            if use_quant:
                 dynamic_scale_after_all2all, _ = torch_npu.npu_moe_token_permute(
                     dynamic_scale_after_all2all.unsqueeze(-1), global_tokens_indices
                 )
@@ -647,7 +661,7 @@ class AlltoAllNormalCommStrategy(NormalEPCommStrategy):
         }
 
         recv_x = (
-            (dispatch_out, dynamic_scale_after_all2all) if input_quant else dispatch_out
+            (dispatch_out, dynamic_scale_after_all2all) if use_quant else dispatch_out
         )
 
         return (
