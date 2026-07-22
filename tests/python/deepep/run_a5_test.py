@@ -5,11 +5,17 @@ import subprocess
 import os
 import itertools
 import time
+import argparse
 from datetime import datetime
 
 # =================配置区域=================
 HCCL_BUFFSIZE = "7500"
 NUM_REPEATS = 3  # 每组参数测试次数
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="A5 Operator Performance Test Automation")
+    parser.add_argument("--output", type=str, default=None, help="日志输出目录，未指定则直接打印输出")
+    return parser.parse_args()
 
 # 测试用例定义
 TEST_CASES = [
@@ -44,59 +50,60 @@ TEST_CASES = [
 ]
 # ==========================================
 
-def run_test_case(test_case, num_tokens, quant_type, repeat_idx):
+def run_test_case(test_case, num_tokens, quant_type, repeat_idx, output_dir=None):
     """
-    执行单个测试用例，并将输出保存到日志文件
+    执行单个测试用例，并将输出保存到日志文件或直接打印
     """
-    # 构建完整命令
     cmd = ["python", test_case["script"]] + test_case["fixed_args"] + [
         f"--num-tokens={num_tokens}",
         f"--quant-type={quant_type}"
     ]
 
-    # 设置环境变量
     env = os.environ.copy()
     env["HCCL_BUFFSIZE"] = HCCL_BUFFSIZE
     env["HCCL_OP_EXPANSION_MODE"] = "AIV"
 
-    # 生成日志文件名
-    log_dir = "test_logs"
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    # 日志命名格式: intranode_1024_no_r1.log
-    log_filename = os.path.join(
-        log_dir, 
-        f"{test_case['name']}_{num_tokens}_{quant_type}_r{repeat_idx+1}.log"
-    )
+    if output_dir:
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        log_filename = os.path.join(
+            output_dir, 
+            f"{test_case['name']}_{num_tokens}_{quant_type}_r{repeat_idx+1}.log"
+        )
+    else:
+        log_filename = None
 
-    # 打印当前正在执行的测试项
     print(f"[RUNNING] {test_case['name']} | tokens={num_tokens} | quant={quant_type} | repeat={repeat_idx+1}")
-    print(f"         Log: {log_filename}")
+    if log_filename:
+        print(f"         Log: {log_filename}")
 
     try:
-        # 执行命令，捕获 stdout 和 stderr 到文件
-        # stderr=subprocess.STDOUT 确保错误信息也写入 stdout 对应的文件
-        with open(log_filename, 'w', encoding='utf-8') as f:
+        if log_filename:
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                process = subprocess.run(
+                    cmd,
+                    env=env,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    check=False
+                )
+        else:
             process = subprocess.run(
                 cmd,
                 env=env,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                check=False  # 不立即抛出异常，以便我们可以读取退出码
+                check=False
             )
         
-        # 判断是否成功 (退出码为 0 表示成功)
         if process.returncode == 0:
             print(f"[SUCCESS] {test_case['name']} | tokens={num_tokens} | quant={quant_type} | repeat={repeat_idx+1}")
             return True
         else:
             print(f"[FAILED]  {test_case['name']} | tokens={num_tokens} | quant={quant_type} | repeat={repeat_idx+1} | Exit Code: {process.returncode}")
-            # 可选：打印最后几行日志以便快速调试
-            with open(log_filename, 'r', encoding='utf-8', errors='ignore') as log_f:
-                lines = log_f.readlines()
-                if lines:
-                    print(f"         Last line: {lines[-1].strip()}")
+            if log_filename:
+                with open(log_filename, 'r', encoding='utf-8', errors='ignore') as log_f:
+                    lines = log_f.readlines()
+                    if lines:
+                        print(f"         Last line: {lines[-1].strip()}")
             return False
 
     except Exception as e:
@@ -104,11 +111,14 @@ def run_test_case(test_case, num_tokens, quant_type, repeat_idx):
         return False
 
 def main():
+    args = parse_args()
+    output_dir = args.output
+    
     print("="*60)
     print("A5 Operator Performance Test Automation")
     print(f"HCCL_BUFFSIZE: {HCCL_BUFFSIZE}")
     print(f"Repeats per case: {NUM_REPEATS}")
-    print(f"Log Directory: ./test_logs/")
+    print(f"Log Directory: {output_dir if output_dir else '(print to stdout)'}")
     print("="*60)
 
     total_tests = 0
@@ -118,12 +128,10 @@ def main():
         name = test_case["name"]
         script = test_case["script"]
         
-        # 检查脚本是否存在
         if not os.path.exists(script):
             print(f"[ERROR] Script not found: {script}")
             continue
 
-        # 生成参数组合 (笛卡尔积)
         token_values = test_case["param_grid"]["num-tokens"]
         quant_values = test_case["param_grid"]["quant-type"]
         
@@ -135,16 +143,16 @@ def main():
         for num_tokens, quant_type in combinations:
             for repeat_idx in range(NUM_REPEATS):
                 total_tests += 1
-                success = run_test_case(test_case, num_tokens, quant_type, repeat_idx)
+                success = run_test_case(test_case, num_tokens, quant_type, repeat_idx, output_dir)
                 if success:
                     passed_tests += 1
                 
-                # 可选：短暂休眠，防止系统负载过抖
                 time.sleep(3)
 
     print("\n" + "="*60)
     print(f"Test Summary: {passed_tests}/{total_tests} passed")
-    print(f"All logs saved in: ./test_logs/")
+    if output_dir:
+        print(f"All logs saved in: {output_dir}/")
     print("="*60)
 
 if __name__ == "__main__":
