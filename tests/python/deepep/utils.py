@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import uuid
+import re
 from pathlib import Path
 from typing import Optional, Union
 
@@ -88,7 +89,10 @@ def bench(fn, num_warmups: int = 50, num_tests: int = 50, post_fn=None):
         elapsed_time = start.elapsed_time(end) / 1e3  # ms -> s
         times.append(elapsed_time)
 
-    times = np.array(times[1:])  # Remove the first timing
+    skip_time = 0
+    if num_tests > 1: 
+        skip_time = 1
+    times = np.array(times[skip_time:])  # Remove the first timing
     return np.average(times), np.min(times), np.max(times)
 
 
@@ -275,14 +279,16 @@ def bench_kineto(
 
     # If the json file exists, `torch_npu.profiler.export_chrome_trace` will use the append write mode,
     # which will cause problems with the json format, so here we use a random file name instead of creating a temporary file
-    temp_path = Path(tempfile.gettempdir()) / f"trace_{uuid.uuid4().hex}.json"
+    temp_path = Path.cwd() / f"trace_{uuid.uuid4().hex}.json"
+    # temp_path = Path(tempfile.gettempdir()) / f"trace_{uuid.uuid4().hex}.json"
     prof.export_chrome_trace(temp_path)
     profile_data = json.loads(Path(temp_path).read_text())
 
     # Return average kernel durations
     kernel_durations = []
     for kernel_name in kernel_names:
-        events = [event for event in profile_data if kernel_name == event["name"]]
+        # events = [event for event in profile_data if kernel_name == event["name"]]
+        events = [event for event in profile_data if kernel_name in event["name"]]
         assert len(events) > 0, f"Kernel '{kernel_name}' not found in trace"
         events = sorted(events, key=lambda event: event["ts"])
         durations = [event["dur"] / 1e6 for event in events]

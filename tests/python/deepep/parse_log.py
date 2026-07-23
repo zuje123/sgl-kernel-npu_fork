@@ -9,7 +9,7 @@ import sys
 
 # ================= 配置区域 =================
 LOG_DIR = "alltoall_test_logs"
-OUTPUT_CSV = "a3_alltoall_performance_results.csv"
+OUTPUT_CSV = "alltoall_performance_results.csv"
 
 # 正则表达式模式定义
 # 模式1: [tuning] Dispatch (quant_type='no', recv_bytes=...) 79.75 GB/s (HCCS), avg_t: 11772.40 us

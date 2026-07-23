@@ -314,7 +314,7 @@ def test(
     dispatch_alltoall_t = bench_kineto(
         lambda: buffer.low_latency_dispatch(**dispatch_args),
         kernel_names=(
-            "aclnnMoeInitRoutingV3_MoeInitRoutingV3_MoeInitRoutingV3",
+            "MoeInitRoutingV3",
             "hcom_alltoallv_"
         ),
         barrier_comm_profiling=True,
