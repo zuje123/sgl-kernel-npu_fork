@@ -253,13 +253,14 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         print("-" * 90, flush=True)
 
     # Extract per-expert valid tokens from both strategies
-    print(
-        f"[Debug] rank={rank} recv_x_d.shape={tuple(recv_x_d.shape)}, "
-        f"recv_count_d={recv_count_d.tolist()}, "
-        f"sum(recv_count_d)={recv_count_d.sum().item()}, "
-        f"recv_x_a.shape={tuple(recv_x_a.shape)}",
-        flush=True,
-    )
+    if args.debug:
+        print(
+            f"[Debug] rank={rank} recv_x_d.shape={tuple(recv_x_d.shape)}, "
+            f"recv_count_d={recv_count_d.tolist()}, "
+            f"sum(recv_count_d)={recv_count_d.sum().item()}, "
+            f"recv_x_a.shape={tuple(recv_x_a.shape)}",
+            flush=True,
+        )
     tokens_d = extract_expert_tokens_default(
         recv_x_d, recv_count_d, num_local_experts
     )
@@ -309,12 +310,13 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         if expert_max_diff > 0 or not count_ok:
             all_dispatch_match = False
 
-        print(
-            f"[Dispatch] rank={rank} expert={expert_id} count: "
-            f"expected={expected_count}, default={count_d}, alltoall={count_a}, "
-            f"max_diff={expert_max_diff:.8f}, cosine_diff={expert_cosine:.8f}",
-            flush=True,
-        )
+        if args.debug:
+            print(
+                f"[Dispatch] rank={rank} expert={expert_id} count: "
+                f"expected={expected_count}, default={count_d}, alltoall={count_a}, "
+                f"max_diff={expert_max_diff:.8f}, cosine_diff={expert_cosine:.8f}",
+                flush=True,
+            )
 
     assert all_dispatch_match, (
         f"[rank {rank}] Dispatch output mismatch between default and alltoall strategies"
@@ -387,6 +389,11 @@ if __name__ == "__main__":
         "--enable-dynamic-tokens",
         action="store_true",
         help="Enable dynamic and inconsistent num_tokens across different ranks",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print per-expert dispatch comparison details",
     )
     args = parser.parse_args()
 
