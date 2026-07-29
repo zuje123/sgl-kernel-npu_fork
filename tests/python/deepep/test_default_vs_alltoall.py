@@ -8,28 +8,30 @@ from deep_ep.strategies import AlltoAllNormalCommStrategy, DefaultNormalCommStra
 from utils import calc_diff, init_dist
 
 
-def run_strategy(strategy, x, topk_idx, topk_weights, num_experts, config):
-    """Run dispatch + combine with the given strategy.
+def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
+    """Run dispatch + combine through the buffer interface.
 
+    The strategy is determined by `buffer.normal_strategy` (swapped by the caller).
     Returns: (recv_x, recv_num_tokens_per_expert_list, combined_x)
     """
-    layout = strategy.get_dispatch_layout(topk_idx, num_experts)
+    # Layout
     (
         num_tokens_per_rank,
         _,
         num_tokens_per_expert,
         is_token_in_rank,
         _,
-    ) = layout
+    ) = buffer.get_dispatch_layout(topk_idx, num_experts)
 
+    # Dispatch
     (
         recv_x,
-        recv_topk_idx,
-        recv_topk_weights,
+        _,
+        _,
         recv_num_tokens_per_expert_list,
         handle,
         _,
-    ) = strategy.dispatch(
+    ) = buffer.dispatch(
         x=x,
         num_tokens_per_rank=num_tokens_per_rank,
         is_token_in_rank=is_token_in_rank,
@@ -39,13 +41,13 @@ def run_strategy(strategy, x, topk_idx, topk_weights, num_experts, config):
         topk_weights=topk_weights,
     )
 
-    # Extract topk_weights from handle for combine (handle structure differs per strategy)
-    if isinstance(handle, dict):
-        combine_topk_weights = handle["topk_weights"]
-    else:
-        combine_topk_weights = handle[7]
-
-    combined_x, _, _ = strategy.combine(
+    # Combine: handle structure differs per strategy
+    #   default  -> tuple, topk_weights at index 7
+    #   alltoall -> dict, topk_weights under key "topk_weights"
+    combine_topk_weights = (
+        handle["topk_weights"] if isinstance(handle, dict) else handle[7]
+    )
+    combined_x, _, _ = buffer.combine(
         x=recv_x,
         handle=handle,
         config=config,
@@ -89,14 +91,14 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
             flush=True,
         )
 
-    # Create buffer (DEEP_USE_MODE defaults to "default"; we instantiate both strategies directly)
+    # Create one buffer (strategy is swapped in-place between runs)
     print(f"[Rank {rank}] Initializing buffer...", flush=True)
     buffer = deep_ep.Buffer(
         group, int(2e9), 0, low_latency_mode=False, num_qps_per_rank=1
     )
     print(f"[Rank {rank}] Buffer created OK.", flush=True)
 
-    # Instantiate both strategies sharing the same runtime
+    # Both strategies share the same runtime/group; swap buffer.normal_strategy between runs
     default_strategy = DefaultNormalCommStrategy(runtime=buffer.runtime, group=group)
     alltoall_strategy = AlltoAllNormalCommStrategy(runtime=buffer.runtime, group=group)
 
@@ -108,25 +110,24 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     if local_rank == 0:
         print("\n>>> Running Default strategy (deep_ep_cpp custom ops)...", flush=True)
     dist.barrier()
-
-    (
-        recv_x_d,
-        recv_list_d,
-        combined_x_d,
-    ) = run_strategy(default_strategy, x, topk_idx, topk_weights, num_experts, config)
+    buffer.normal_strategy = default_strategy
+    recv_x_d, recv_list_d, combined_x_d = run_with_buffer(
+        buffer, x, topk_idx, topk_weights, num_experts, config
+    )
 
     # ==========================================
     # Run AlltoAll strategy
     # ==========================================
     if local_rank == 0:
-        print(">>> Running AlltoAll strategy (torch.distributed all_to_all)...", flush=True)
+        print(
+            ">>> Running AlltoAll strategy (torch.distributed all_to_all)...",
+            flush=True,
+        )
     dist.barrier()
-
-    (
-        recv_x_a,
-        recv_list_a,
-        combined_x_a,
-    ) = run_strategy(alltoall_strategy, x, topk_idx, topk_weights, num_experts, config)
+    buffer.normal_strategy = alltoall_strategy
+    recv_x_a, recv_list_a, combined_x_a = run_with_buffer(
+        buffer, x, topk_idx, topk_weights, num_experts, config
+    )
 
     # ==========================================
     # Comparison
@@ -143,7 +144,10 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     # 1. recv_num_tokens_per_expert_list (must be identical)
     list_match = recv_list_d == recv_list_a
     if local_rank == 0:
-        print(f"[Dispatch] recv_num_tokens_per_expert_list match: {list_match}", flush=True)
+        print(
+            f"[Dispatch] recv_num_tokens_per_expert_list match: {list_match}",
+            flush=True,
+        )
         if not list_match:
             print(f"  default:  {recv_list_d}", flush=True)
             print(f"  alltoall: {recv_list_a}", flush=True)
@@ -170,7 +174,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     if local_rank == 0:
         print(f"[Dispatch] recv_x bitwise equal: {recv_exact_match}", flush=True)
 
-    # 4. recv_x numerical diff (in case of minor FP rounding; should be 0 for truly identical outputs)
+    # 4. recv_x numerical diff (should be 0 for truly identical outputs)
     recv_x_d_f = recv_x_d.float()
     recv_x_a_f = recv_x_a.float()
     recv_cosine_diff = calc_diff(recv_x_d_f, recv_x_a_f)
@@ -186,7 +190,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     )
 
     # --- Combine comparison ---
-    # Combine output (recv_x) must also be bitwise-identical between the two strategies
+    # Combine output must also be bitwise-identical between the two strategies
     combined_x_d_f = combined_x_d.float()
     combined_x_a_f = combined_x_a.float()
 
@@ -221,7 +225,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Compare dispatch/combine accuracy between Default (deep_ep_cpp) "
-        "and AlltoAll (torch.distributed) strategies"
+        "and AlltoAll (torch.distributed) strategies via the buffer interface"
     )
     parser.add_argument(
         "--num-processes",
