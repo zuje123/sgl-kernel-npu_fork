@@ -184,7 +184,7 @@ def run_strategy_all_rounds(
                 f"  [{strategy_name}] round {round_idx + 1}/{len(inputs)}...",
                 flush=True,
             )
-        dist.barrier()
+        # dist.barrier()
         recv_x, recv_count, handle, combined_x = run_with_buffer(
             buffer, x, topk_idx, topk_weights, aligned_num_tokens, num_experts
         )
