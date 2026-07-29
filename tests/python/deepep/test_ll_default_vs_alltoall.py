@@ -60,20 +60,23 @@ def run_with_buffer(buffer, x, topk_idx, topk_weights, aligned_num_tokens, num_e
     return recv_x, recv_count, handle, combined_x
 
 
-def extract_expert_tokens_default(recv_x, recv_count, num_local_experts, aligned_num_tokens):
+def extract_expert_tokens_default(recv_x, recv_count, num_local_experts):
     """Extract per-expert valid tokens from Default strategy's dispatch output.
 
-    Layout: recv_x has `aligned_num_tokens` rows, each expert's tokens occupy a
-    contiguous slice of `aligned_num_tokens / num_local_experts` rows.
-    Only the first `recv_count[i]` rows per expert are valid.
+    Layout: tokens are compactly packed by expert with no inter-expert padding.
+    Expert i's tokens occupy `recv_count[i]` rows starting at the cumulative
+    offset of all preceding experts. The offset is computed from recv_count,
+    NOT from a fixed stride (the formula `aligned_num_tokens / num_local_experts`
+    used in test_low_latency.py is too small when recv_count exceeds it, causing
+    overlapping slices).
     """
-    temp = aligned_num_tokens // num_local_experts
     expert_tokens = []
+    start = 0
     for i in range(num_local_experts):
         count = recv_count[i].item()
-        start = int(i * temp)
         tokens = recv_x[start : start + count]
         expert_tokens.append(tokens)
+        start += count
     return expert_tokens
 
 
@@ -250,8 +253,15 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         print("-" * 90, flush=True)
 
     # Extract per-expert valid tokens from both strategies
+    print(
+        f"[Debug] rank={rank} recv_x_d.shape={tuple(recv_x_d.shape)}, "
+        f"recv_count_d={recv_count_d.tolist()}, "
+        f"sum(recv_count_d)={recv_count_d.sum().item()}, "
+        f"recv_x_a.shape={tuple(recv_x_a.shape)}",
+        flush=True,
+    )
     tokens_d = extract_expert_tokens_default(
-        recv_x_d, recv_count_d, num_local_experts, aligned_num_tokens
+        recv_x_d, recv_count_d, num_local_experts
     )
     tokens_a = extract_expert_tokens_alltoall(
         recv_x_a, num_local_experts, num_ranks, aligned_num_tokens, all_topk_idx, rank
