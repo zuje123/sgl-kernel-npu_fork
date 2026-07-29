@@ -1,4 +1,5 @@
 import argparse
+import random
 
 import deep_ep
 import torch
@@ -62,8 +63,9 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     rank, num_ranks, group = init_dist(local_rank, num_local_ranks)
     torch.manual_seed(args.seed + rank)
     torch.npu.manual_seed(args.seed + rank)
+    random.seed(args.seed + rank)
 
-    num_tokens = args.num_tokens
+    base_num_tokens = args.num_tokens
     hidden = args.hidden
     num_topk = args.num_topk
     num_experts = args.num_experts
@@ -71,6 +73,23 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     assert num_experts % num_ranks == 0, (
         f"num_experts ({num_experts}) must be divisible by num_ranks ({num_ranks})"
     )
+
+    # Dynamic tokens: each rank gets a slightly different num_tokens (normal mode
+    # supports inconsistent token counts across ranks natively, no alignment needed).
+    if args.enable_dynamic_tokens:
+        fluctuation_percentage = 0.1
+        min_fluctuation = 2
+        if base_num_tokens < 10:
+            fluctuation = random.randint(-min_fluctuation, min_fluctuation)
+            num_tokens = base_num_tokens + fluctuation
+        else:
+            fluctuation = random.uniform(
+                1 - fluctuation_percentage, 1 + fluctuation_percentage
+            )
+            num_tokens = int(base_num_tokens * fluctuation)
+        num_tokens = max(num_tokens, 1)
+    else:
+        num_tokens = base_num_tokens
 
     # Generate input data (deterministic per rank)
     x = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device="npu")
@@ -87,7 +106,8 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         print(
             f"[config] num_tokens={num_tokens}, hidden={hidden}, "
             f"num_topk={num_topk}, num_experts={num_experts}, "
-            f"num_ranks={num_ranks}, seed={args.seed}",
+            f"num_ranks={num_ranks}, seed={args.seed}, "
+            f"dynamic_tokens={args.enable_dynamic_tokens}",
             flush=True,
         )
 
@@ -247,6 +267,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed (default: 42)"
+    )
+    parser.add_argument(
+        "--enable-dynamic-tokens",
+        action="store_true",
+        help="Enable dynamic and inconsistent num_tokens across different ranks",
     )
     args = parser.parse_args()
 

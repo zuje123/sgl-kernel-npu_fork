@@ -115,17 +115,34 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     )
     num_local_experts = num_experts // num_ranks
 
+    # Dynamic tokens: each rank gets a slightly different num_tokens, then aligned
+    # to the max across ranks (same scheme as test_low_latency.py).
+    if args.enable_dynamic_tokens:
+        fluctuation_percentage = 0.1
+        min_fluctuation = 2
+        if base_num_tokens < 10:
+            fluctuation = random.randint(-min_fluctuation, min_fluctuation)
+            num_tokens = base_num_tokens + fluctuation
+        else:
+            fluctuation = random.uniform(
+                1 - fluctuation_percentage, 1 + fluctuation_percentage
+            )
+            num_tokens = int(base_num_tokens * fluctuation)
+        num_tokens = max(num_tokens, 1)
+    else:
+        num_tokens = base_num_tokens
+
     # Align num_tokens across ranks
-    local_tokens_tensor = torch.tensor([base_num_tokens], dtype=torch.int32, device="npu")
+    local_tokens_tensor = torch.tensor([num_tokens], dtype=torch.int32, device="npu")
     dist.all_reduce(local_tokens_tensor, op=dist.ReduceOp.MAX)
     aligned_num_tokens = local_tokens_tensor.item()
-    num_tokens = base_num_tokens
 
     if local_rank == 0:
         print(
             f"[config] num_tokens={num_tokens}, aligned_num_tokens={aligned_num_tokens}, "
             f"hidden={hidden}, num_topk={num_topk}, num_experts={num_experts}, "
-            f"num_ranks={num_ranks}, seed={args.seed}",
+            f"num_ranks={num_ranks}, seed={args.seed}, "
+            f"dynamic_tokens={args.enable_dynamic_tokens}",
             flush=True,
         )
 
@@ -327,6 +344,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed (default: 42)"
+    )
+    parser.add_argument(
+        "--enable-dynamic-tokens",
+        action="store_true",
+        help="Enable dynamic and inconsistent num_tokens across different ranks",
     )
     args = parser.parse_args()
 
