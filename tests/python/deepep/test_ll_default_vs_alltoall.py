@@ -77,25 +77,37 @@ def extract_expert_tokens_default(recv_x, recv_count, num_local_experts, aligned
     return expert_tokens
 
 
-def extract_expert_tokens_alltoall(recv_x, recv_count, num_local_experts, num_ranks, aligned_num_tokens):
+def extract_expert_tokens_alltoall(
+    recv_x, num_local_experts, num_ranks, aligned_num_tokens, all_topk_idx, rank
+):
     """Extract per-expert valid tokens from AlltoAll strategy's dispatch output.
 
     Layout: recv_x has `num_local_experts * num_ranks * aligned_num_tokens` rows.
-    Expert i's tokens occupy a slice of `num_ranks * aligned_num_tokens` rows.
-    The recv_count is a constant (buffer capacity), so we filter out padding
-    (zero rows) to find valid tokens.
+    Expert i's tokens occupy a slice of `num_ranks * aligned_num_tokens` rows,
+    split into `num_ranks` sub-blocks of `aligned_num_tokens` rows each (one per
+    source rank). Within each sub-block, valid tokens are placed first (by
+    npu_moe_init_routing_v2 in token-index order), followed by capacity padding.
+
+    We use `all_topk_idx` (gathered with -1 for padding) to compute the real
+    token count per expert per rank, and extract the first N rows from each
+    sub-block. This avoids unreliable zero-row filtering, which fails when
+    capacity padding contains non-zero uninitialized memory.
     """
-    chunk_size = num_ranks * aligned_num_tokens
+    expert_capacity = aligned_num_tokens
     expert_tokens = []
     for i in range(num_local_experts):
-        start = int(i * chunk_size)
-        end = int((i + 1) * chunk_size)
-        block = recv_x[start:end]
-        # Filter out zero rows (padding from x_padding = torch.zeros)
-        row_norms = block.float().abs().sum(dim=-1)
-        nonzero_mask = row_norms > 0
-        valid = block[nonzero_mask]
-        expert_tokens.append(valid)
+        expert_id = rank * num_local_experts + i
+        chunk_start = i * num_ranks * expert_capacity
+        valid_tokens = []
+        for r in range(num_ranks):
+            count_from_r = (all_topk_idx[r] == expert_id).sum().item()
+            sub_block_start = chunk_start + r * expert_capacity
+            valid_tokens.append(
+                recv_x[sub_block_start : sub_block_start + count_from_r]
+            )
+        expert_tokens.append(
+            torch.cat(valid_tokens, dim=0) if valid_tokens else recv_x[:0]
+        )
     return expert_tokens
 
 
@@ -139,7 +151,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
 
     if local_rank == 0:
         print(
-            f"[config] num_tokens={num_tokens}, aligned_num_tokens={aligned_num_tokens}, "
+            f"[{rank=} config] num_tokens={num_tokens}, aligned_num_tokens={aligned_num_tokens}, "
             f"hidden={hidden}, num_topk={num_topk}, num_experts={num_experts}, "
             f"num_ranks={num_ranks}, seed={args.seed}, "
             f"dynamic_tokens={args.enable_dynamic_tokens}",
@@ -242,7 +254,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         recv_x_d, recv_count_d, num_local_experts, aligned_num_tokens
     )
     tokens_a = extract_expert_tokens_alltoall(
-        recv_x_a, recv_count_a, num_local_experts, num_ranks, aligned_num_tokens
+        recv_x_a, num_local_experts, num_ranks, aligned_num_tokens, all_topk_idx, rank
     )
 
     all_dispatch_match = True

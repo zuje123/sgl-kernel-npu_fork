@@ -104,7 +104,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
 
     if local_rank == 0:
         print(
-            f"[config] num_tokens={num_tokens}, hidden={hidden}, "
+            f"[{rank=} config] num_tokens={num_tokens}, hidden={hidden}, "
             f"num_topk={num_topk}, num_experts={num_experts}, "
             f"num_ranks={num_ranks}, seed={args.seed}, "
             f"dynamic_tokens={args.enable_dynamic_tokens}",
