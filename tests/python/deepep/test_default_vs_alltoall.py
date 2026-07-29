@@ -1,3 +1,13 @@
+"""Compare dispatch/combine accuracy between Default (deep_ep_cpp) and AlltoAll
+(torch.distributed) strategies via the buffer interface.
+
+Workflow:
+  1. Generate N rounds of random inputs (identical for both strategies).
+  2. Run Default strategy over all N rounds, collect results.
+  3. Run AlltoAll strategy over all N rounds, collect results.
+  4. Compare per-round results and display a summary table.
+"""
+
 import argparse
 import random
 
@@ -6,7 +16,7 @@ import torch
 import torch.distributed as dist
 import torch_npu
 from deep_ep.strategies import AlltoAllNormalCommStrategy, DefaultNormalCommStrategy
-from utils import calc_diff, init_dist
+from utils import init_dist
 
 
 def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
@@ -15,7 +25,6 @@ def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
     The strategy is determined by `buffer.normal_strategy` (swapped by the caller).
     Returns: (recv_x, recv_num_tokens_per_expert_list, combined_x)
     """
-    # Layout
     (
         num_tokens_per_rank,
         _,
@@ -24,7 +33,6 @@ def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
         _,
     ) = buffer.get_dispatch_layout(topk_idx, num_experts)
 
-    # Dispatch
     (
         recv_x,
         _,
@@ -42,9 +50,6 @@ def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
         topk_weights=topk_weights,
     )
 
-    # Combine: handle structure differs per strategy
-    #   default  -> tuple, topk_weights at index 7
-    #   alltoall -> dict, topk_weights under key "topk_weights"
     combine_topk_weights = (
         handle["topk_weights"] if isinstance(handle, dict) else handle[7]
     )
@@ -59,39 +64,30 @@ def run_with_buffer(buffer, x, topk_idx, topk_weights, num_experts, config):
     return recv_x, recv_num_tokens_per_expert_list, combined_x
 
 
-def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace):
-    rank, num_ranks, group = init_dist(local_rank, num_local_ranks)
-    torch.manual_seed(args.seed + rank)
-    torch.npu.manual_seed(args.seed + rank)
-    random.seed(args.seed + rank)
+def generate_round_inputs(args, rank, round_idx):
+    """Generate deterministic random inputs for one round.
 
-    base_num_tokens = args.num_tokens
+    Seeding is deterministic per (round, rank) so both strategies see the
+    identical input for the same round.
+    """
+    seed = args.seed + round_idx
+    torch.manual_seed(seed + rank)
+    torch.npu.manual_seed(seed + rank)
+    random.seed(seed + rank)
+
     hidden = args.hidden
     num_topk = args.num_topk
     num_experts = args.num_experts
+    base_num_tokens = args.num_tokens
 
-    assert num_experts % num_ranks == 0, (
-        f"num_experts ({num_experts}) must be divisible by num_ranks ({num_ranks})"
-    )
-
-    # Dynamic tokens: each rank gets a slightly different num_tokens (normal mode
-    # supports inconsistent token counts across ranks natively, no alignment needed).
     if args.enable_dynamic_tokens:
-        fluctuation_percentage = 0.1
-        min_fluctuation = 2
         if base_num_tokens < 10:
-            fluctuation = random.randint(-min_fluctuation, min_fluctuation)
-            num_tokens = base_num_tokens + fluctuation
+            num_tokens = max(1, base_num_tokens + random.randint(-2, 2))
         else:
-            fluctuation = random.uniform(
-                1 - fluctuation_percentage, 1 + fluctuation_percentage
-            )
-            num_tokens = int(base_num_tokens * fluctuation)
-        num_tokens = max(num_tokens, 1)
+            num_tokens = max(1, int(base_num_tokens * random.uniform(0.9, 1.1)))
     else:
         num_tokens = base_num_tokens
 
-    # Generate input data (deterministic per rank)
     x = torch.randn((num_tokens, hidden), dtype=torch.bfloat16, device="npu")
     scores = (
         torch.randn((num_tokens, num_experts), dtype=torch.float32, device="npu").abs()
@@ -101,145 +97,236 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     topk_weights = torch.ones(
         (num_tokens, num_topk), dtype=torch.float32, device="npu"
     )
+    return x, topk_idx, topk_weights, num_tokens
+
+
+def run_strategy_all_rounds(
+    buffer, strategy, inputs, num_experts, config, strategy_name, rank
+):
+    """Run one strategy over all rounds. Returns list of result tuples."""
+    buffer.normal_strategy = strategy
+    results = []
+    for round_idx, (x, topk_idx, topk_weights, num_tokens) in enumerate(inputs):
+        if rank == 0:
+            print(
+                f"  [{strategy_name}] round {round_idx + 1}/{len(inputs)}...",
+                flush=True,
+            )
+        dist.barrier()
+        recv_x, recv_list, combined_x = run_with_buffer(
+            buffer, x, topk_idx, topk_weights, num_experts, config
+        )
+        results.append((recv_x, recv_list, combined_x, num_tokens))
+    return results
+
+
+def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace):
+    rank, num_ranks, group = init_dist(local_rank, num_local_ranks)
+
+    hidden = args.hidden
+    num_topk = args.num_topk
+    num_experts = args.num_experts
+
+    assert num_experts % num_ranks == 0, (
+        f"num_experts ({num_experts}) must be divisible by num_ranks ({num_ranks})"
+    )
 
     if local_rank == 0:
         print(
-            f"[{rank=} config] num_tokens={num_tokens}, hidden={hidden}, "
-            f"num_topk={num_topk}, num_experts={num_experts}, "
-            f"num_ranks={num_ranks}, seed={args.seed}, "
-            f"dynamic_tokens={args.enable_dynamic_tokens}",
+            f"[config] hidden={hidden}, num_topk={num_topk}, "
+            f"num_experts={num_experts}, num_ranks={num_ranks}, seed={args.seed}, "
+            f"dynamic_tokens={args.enable_dynamic_tokens}, "
+            f"num_rounds={args.num_rounds}",
             flush=True,
         )
 
-    # Create one buffer (strategy is swapped in-place between runs)
+    # ==========================================
+    # Phase 1: Generate all rounds' inputs (collective, deterministic)
+    # ==========================================
+    if local_rank == 0:
+        print("\n>>> Phase 1: Generating inputs for all rounds...", flush=True)
+    inputs = []
+    for round_idx in range(args.num_rounds):
+        x, topk_idx, topk_weights, num_tokens = generate_round_inputs(
+            args, rank, round_idx
+        )
+        inputs.append((x, topk_idx, topk_weights, num_tokens))
+    dist.barrier()
+    if local_rank == 0:
+        token_summary = ", ".join(
+            f"r{i + 1}={inp[3]}" for i, inp in enumerate(inputs)
+        )
+        print(f"  num_tokens per round: {token_summary}", flush=True)
+
+    # ==========================================
+    # Create buffer + strategies
+    # ==========================================
     print(f"[Rank {rank}] Initializing buffer...", flush=True)
     buffer = deep_ep.Buffer(
         group, int(2e9), 0, low_latency_mode=False, num_qps_per_rank=1
     )
     print(f"[Rank {rank}] Buffer created OK.", flush=True)
 
-    # Both strategies share the same runtime/group; swap buffer.normal_strategy between runs
     default_strategy = DefaultNormalCommStrategy(runtime=buffer.runtime, group=group)
     alltoall_strategy = AlltoAllNormalCommStrategy(runtime=buffer.runtime, group=group)
-
     config = deep_ep.Config(24, 8, 256)
 
     # ==========================================
-    # Run Default strategy
+    # Phase 2: Run Default strategy over all rounds
     # ==========================================
     if local_rank == 0:
-        print("\n>>> Running Default strategy (deep_ep_cpp custom ops)...", flush=True)
-    dist.barrier()
-    buffer.normal_strategy = default_strategy
-    recv_x_d, recv_list_d, combined_x_d = run_with_buffer(
-        buffer, x, topk_idx, topk_weights, num_experts, config
+        print("\n>>> Phase 2: Running Default strategy for all rounds...", flush=True)
+    results_d = run_strategy_all_rounds(
+        buffer, default_strategy, inputs, num_experts, config, "Default", rank
     )
 
     # ==========================================
-    # Run AlltoAll strategy
+    # Phase 3: Run AlltoAll strategy over all rounds
     # ==========================================
     if local_rank == 0:
-        print(
-            ">>> Running AlltoAll strategy (torch.distributed all_to_all)...",
-            flush=True,
-        )
-    dist.barrier()
-    buffer.normal_strategy = alltoall_strategy
-    recv_x_a, recv_list_a, combined_x_a = run_with_buffer(
-        buffer, x, topk_idx, topk_weights, num_experts, config
+        print("\n>>> Phase 3: Running AlltoAll strategy for all rounds...", flush=True)
+    results_a = run_strategy_all_rounds(
+        buffer, alltoall_strategy, inputs, num_experts, config, "AlltoAll", rank
     )
 
     # ==========================================
-    # Comparison
+    # Phase 4: Compare and display table
     # ==========================================
     dist.barrier()
-
-    # --- Dispatch comparison ---
-    # Input identical => recv_x must be bitwise-identical (same row order, same values)
     if local_rank == 0:
         print("\n" + "=" * 90, flush=True)
-        print("DISPATCH COMPARISON", flush=True)
-        print("-" * 90, flush=True)
+        print("COMPARISON RESULTS", flush=True)
+        print("=" * 90, flush=True)
 
-    # 1. recv_num_tokens_per_expert_list (must be identical)
-    list_match = recv_list_d == recv_list_a
-    if local_rank == 0:
-        print(
-            f"[Dispatch] recv_num_tokens_per_expert_list match: {list_match}",
-            flush=True,
+    all_passed = True
+    # Collect per-round stats for table
+    table_rows = []
+    for round_idx in range(args.num_rounds):
+        recv_x_d, recv_list_d, combined_x_d, num_tokens = results_d[round_idx]
+        recv_x_a, recv_list_a, combined_x_a, _ = results_a[round_idx]
+
+        # Dispatch comparison
+        list_match = recv_list_d == recv_list_a
+        shape_match = recv_x_d.shape == recv_x_a.shape
+        dispatch_pass = list_match and shape_match
+        dispatch_max_diff = 0.0
+        if dispatch_pass:
+            recv_x_d_f = recv_x_d.float()
+            recv_x_a_f = recv_x_a.float()
+            dispatch_max_diff = torch.max(
+                torch.abs(recv_x_d_f - recv_x_a_f)
+            ).item()
+            dispatch_pass = dispatch_max_diff == 0.0
+
+        # Combine comparison
+        combined_x_d_f = combined_x_d.float()
+        combined_x_a_f = combined_x_a.float()
+        combine_max_diff = torch.max(
+            torch.abs(combined_x_d_f - combined_x_a_f)
+        ).item()
+        combine_pass = combine_max_diff == 0.0
+
+        round_pass = dispatch_pass and combine_pass
+        if not round_pass:
+            all_passed = False
+
+        table_rows.append(
+            {
+                "round": round_idx + 1,
+                "tokens": num_tokens,
+                "dispatch_pass": dispatch_pass,
+                "dispatch_max_diff": dispatch_max_diff,
+                "combine_pass": combine_pass,
+                "combine_max_diff": combine_max_diff,
+                "pass": round_pass,
+            }
         )
-        if not list_match:
-            print(f"  default:  {recv_list_d}", flush=True)
-            print(f"  alltoall: {recv_list_a}", flush=True)
-    assert list_match, (
-        f"[rank {rank}] recv_num_tokens_per_expert_list mismatch: "
-        f"default={recv_list_d}, alltoall={recv_list_a}"
-    )
 
-    # 2. recv_x shape (must be identical)
-    shape_match = recv_x_d.shape == recv_x_a.shape
+        if args.debug and rank == 0:
+            print(
+                f"  [Round {round_idx + 1}] tokens={num_tokens}, "
+                f"list_match={list_match}, shape_match={shape_match}, "
+                f"dispatch_max_diff={dispatch_max_diff:.8f}, "
+                f"combine_max_diff={combine_max_diff:.8f}",
+                flush=True,
+            )
+
+    # Print table (rank 0 only)
     if local_rank == 0:
-        print(
-            f"[Dispatch] recv_x shape: default={tuple(recv_x_d.shape)}, "
-            f"alltoall={tuple(recv_x_a.shape)}, match={shape_match}",
-            flush=True,
-        )
-    assert shape_match, (
-        f"[rank {rank}] recv_x shape mismatch: "
-        f"default={tuple(recv_x_d.shape)}, alltoall={tuple(recv_x_a.shape)}"
-    )
-
-    # 3. recv_x exact equality (bitwise)
-    recv_exact_match = torch.equal(recv_x_d, recv_x_a)
-    if local_rank == 0:
-        print(f"[Dispatch] recv_x bitwise equal: {recv_exact_match}", flush=True)
-
-    # 4. recv_x numerical diff (should be 0 for truly identical outputs)
-    recv_x_d_f = recv_x_d.float()
-    recv_x_a_f = recv_x_a.float()
-    recv_cosine_diff = calc_diff(recv_x_d_f, recv_x_a_f)
-    recv_max_diff = torch.max(torch.abs(recv_x_d_f - recv_x_a_f)).item()
-    recv_avg_diff = torch.mean(torch.abs(recv_x_d_f - recv_x_a_f)).item()
-    print(
-        f"[Dispatch] rank={rank} recv_x cosine_diff={recv_cosine_diff:.8f}, "
-        f"avg_diff={recv_avg_diff:.8f}, max_diff={recv_max_diff:.8f}",
-        flush=True,
-    )
-    assert recv_max_diff == 0.0, (
-        f"[rank {rank}] recv_x not bitwise-identical: max_diff={recv_max_diff}"
-    )
-
-    # --- Combine comparison ---
-    # Combine output must also be bitwise-identical between the two strategies
-    combined_x_d_f = combined_x_d.float()
-    combined_x_a_f = combined_x_a.float()
-
-    combine_exact_match = torch.equal(combined_x_d, combined_x_a)
-    if local_rank == 0:
-        print("\n" + "-" * 90, flush=True)
-        print("COMBINE COMPARISON", flush=True)
-        print("-" * 90, flush=True)
-        print(f"[Combine] combined_x bitwise equal: {combine_exact_match}", flush=True)
-
-    diff_d_a = calc_diff(combined_x_d_f, combined_x_a_f)
-    max_diff_d_a = torch.max(torch.abs(combined_x_d_f - combined_x_a_f)).item()
-    avg_diff_d_a = torch.mean(torch.abs(combined_x_d_f - combined_x_a_f)).item()
-    print(
-        f"[Combine] rank={rank} cosine_diff={diff_d_a:.8f}, "
-        f"avg_diff={avg_diff_d_a:.8f}, max_diff={max_diff_d_a:.8f}",
-        flush=True,
-    )
-    assert max_diff_d_a == 0.0, (
-        f"[rank {rank}] combined_x not bitwise-identical: max_diff={max_diff_d_a}"
-    )
-
-    if local_rank == 0:
-        print("-" * 90, flush=True)
-        print("Status: PASS (all outputs bitwise-identical)", flush=True)
+        print_table(table_rows)
+        print("=" * 90, flush=True)
+        if all_passed:
+            print(f"Status: ALL {args.num_rounds} ROUND(S) PASSED", flush=True)
+        else:
+            failed = sum(1 for r in table_rows if not r["pass"])
+            print(
+                f"Status: {failed}/{args.num_rounds} ROUND(S) FAILED",
+                flush=True,
+            )
         print("=" * 90 + "\n", flush=True)
 
+    assert all_passed, f"[rank {rank}] Some rounds failed"
     dist.barrier()
     dist.destroy_process_group()
+
+
+def print_table(rows):
+    """Print comparison results as a formatted table."""
+    if not rows:
+        return
+    headers = [
+        "Round",
+        "Tokens",
+        "Dispatch",
+        "Disp MaxDiff",
+        "Combine",
+        "Comb MaxDiff",
+        "Status",
+    ]
+    # Compute column widths
+    widths = []
+    for i, h in enumerate(headers):
+        w = len(h)
+        for r in rows:
+            val = format_cell(r, i)
+            if len(val) > w:
+                w = len(val)
+        widths.append(w)
+
+    # Build separator and header
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+    header_line = "|"
+    for h, w in zip(headers, widths):
+        header_line += f" {h:<{w}} |"
+    print(sep, flush=True)
+    print(header_line, flush=True)
+    print(sep, flush=True)
+    for r in rows:
+        line = "|"
+        for i in range(len(headers)):
+            val = format_cell(r, i)
+            line += f" {val:<{widths[i]}} |"
+        print(line, flush=True)
+    print(sep, flush=True)
+
+
+def format_cell(row, col_idx):
+    """Format a cell value for the table."""
+    if col_idx == 0:  # Round
+        return str(row["round"])
+    if col_idx == 1:  # Tokens
+        return str(row["tokens"])
+    if col_idx == 2:  # Dispatch
+        return "PASS" if row["dispatch_pass"] else "FAIL"
+    if col_idx == 3:  # Disp MaxDiff
+        return f"{row['dispatch_max_diff']:.6f}"
+    if col_idx == 4:  # Combine
+        return "PASS" if row["combine_pass"] else "FAIL"
+    if col_idx == 5:  # Comb MaxDiff
+        return f"{row['combine_max_diff']:.6f}"
+    if col_idx == 6:  # Status
+        return "PASS" if row["pass"] else "FAIL"
+    return ""
 
 
 if __name__ == "__main__":
@@ -272,6 +359,17 @@ if __name__ == "__main__":
         "--enable-dynamic-tokens",
         action="store_true",
         help="Enable dynamic and inconsistent num_tokens across different ranks",
+    )
+    parser.add_argument(
+        "--num-rounds",
+        type=int,
+        default=1,
+        help="Number of rounds to run with fresh random input each round (default: 1)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print per-rank dispatch comparison details",
     )
     args = parser.parse_args()
 
