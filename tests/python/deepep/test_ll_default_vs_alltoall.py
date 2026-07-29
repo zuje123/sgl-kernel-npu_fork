@@ -280,15 +280,31 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         # Check counts match expected
         count_ok = (count_d == expected_count) and (count_a == expected_count)
 
-        # Sort tokens per expert and compare (row order may differ between strategies)
+        # Direct row-wise comparison: both strategies are expected to order tokens
+        # by source rank, so rows should align. If they don't, fall back to a
+        # sorted comparison to distinguish a pure ordering difference from a
+        # real numerical mismatch.
+        expert_max_diff = float("inf") if not count_ok else 0.0
+        expert_cosine = float("inf") if not count_ok else 0.0
+        order_mismatch = False
         if count_d > 0 and count_a > 0 and count_d == count_a:
-            sorted_d, _ = td.float().sort(dim=0)
-            sorted_a, _ = ta.float().sort(dim=0)
-            expert_max_diff = torch.max(torch.abs(sorted_d - sorted_a)).item()
-            expert_cosine = calc_diff(sorted_d, sorted_a)
-        else:
-            expert_max_diff = float("inf") if not count_ok else 0.0
-            expert_cosine = float("inf") if not count_ok else 0.0
+            td_f = td.float()
+            ta_f = ta.float()
+            expert_max_diff = torch.max(torch.abs(td_f - ta_f)).item()
+            expert_cosine = calc_diff(td_f, ta_f)
+            if expert_max_diff > 0:
+                # Diagnose: is it a row-ordering difference or a real mismatch?
+                sorted_d, _ = td_f.sort(dim=0)
+                sorted_a, _ = ta_f.sort(dim=0)
+                sorted_max_diff = torch.max(torch.abs(sorted_d - sorted_a)).item()
+                order_mismatch = sorted_max_diff == 0
+                if order_mismatch:
+                    print(
+                        f"[Dispatch] rank={rank} expert={expert_id} NOTE: rows "
+                        f"match as a set but order differs (direct max_diff="
+                        f"{expert_max_diff:.8f}, sorted max_diff=0)",
+                        flush=True,
+                    )
 
         if expert_max_diff > 0 or not count_ok:
             all_dispatch_match = False
@@ -304,7 +320,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
         f"[rank {rank}] Dispatch output mismatch between default and alltoall strategies"
     )
     if local_rank == 0:
-        print("[Dispatch] All experts: tokens match (sorted comparison)", flush=True)
+        print("[Dispatch] All experts: tokens match (row-wise comparison)", flush=True)
 
     # --- Combine comparison ---
     # Combine output shape: [num_tokens, hidden], must be bitwise-identical
