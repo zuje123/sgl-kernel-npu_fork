@@ -617,11 +617,11 @@ class AllToAllLowLatencyCommStrategy(LowLatencyEPCommStrategy):
         recv_all_raw = recv_all_raw.reshape(
             group_size * num_local_experts, expert_capacity, hidden
         )
-        topk_weights_padding = torch.empty(
+        topk_weights_padding = torch.zeros(
             expert_capacity,
             topk_weights.size(1),
-            dtype=x.dtype,
-            device=x.device,
+            dtype=topk_weights.dtype,
+            device=topk_weights.device,
         )
         topk_weights_padding[:num_tokens].copy_(topk_weights)
         output = torch_npu.npu_moe_finalize_routing(
