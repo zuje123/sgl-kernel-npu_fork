@@ -184,7 +184,7 @@ def run_strategy_all_rounds(
                 f"  [{strategy_name}] round {round_idx + 1}/{len(inputs)}...",
                 flush=True,
             )
-        # dist.barrier()
+
         recv_x, recv_count, handle, combined_x = run_with_buffer(
             buffer, x, topk_idx, topk_weights, aligned_num_tokens, num_experts
         )
@@ -362,7 +362,7 @@ def test_compare(local_rank: int, num_local_ranks: int, args: argparse.Namespace
     dist.barrier()
     if local_rank == 0:
         print("\n" + "=" * 100, flush=True)
-        print("COMPARISON RESULTS", flush=True)
+        print("LOW_LATENCY COMPARISON RESULTS", flush=True)
         print("=" * 100, flush=True)
 
     all_passed = True

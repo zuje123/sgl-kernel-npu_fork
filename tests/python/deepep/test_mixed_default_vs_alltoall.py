@@ -250,7 +250,7 @@ def run_strategy_pipeline(
     # Stage 1+2: normal dispatch + combine
     buffer.normal_strategy = normal_strategy
     x_n, topk_idx_n, topk_weights_n, num_tokens_n = normal_input
-    dist.barrier()
+
     n_recv_x, n_recv_list, n_combined_x = run_normal(
         buffer, x_n, topk_idx_n, topk_weights_n, num_experts, config
     )
@@ -260,7 +260,7 @@ def run_strategy_pipeline(
     x_l, topk_idx_l, topk_weights_l, all_topk_idx, num_tokens_l, aligned_num_tokens = (
         ll_input
     )
-    dist.barrier()
+
     ll_recv_x, ll_recv_count, ll_combined_x = run_ll(
         buffer, x_l, topk_idx_l, topk_weights_l, aligned_num_tokens, num_experts
     )
